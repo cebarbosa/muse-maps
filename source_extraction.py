@@ -18,11 +18,11 @@ from astropy.io import fits
 from astropy.convolution import Gaussian2DKernel, convolve
 from astropy.table import Table
 import matplotlib.pyplot as plt
-from matplotlib.patches import Ellipse
 
 import sewpy
 
 import context
+from misc import array_from_header
 
 def make_unsharp_mask(img, redo=False):
     """ Produces unsharp mask of a given image. """
@@ -36,19 +36,22 @@ def make_unsharp_mask(img, redo=False):
     fits.writeto(output, unsharp_mask, overwrite=True)
     return output
 
-def mask_regions(img):
+def mask_regions(img, redo=False):
     """ Mask regions marked in file mask.reg made in ds9. """
     filename = "mask.reg"
+    outfile = "masked.fits"
     if not os.path.exists(filename):
         return img
+    if os.path.exists(outfile) and not redo:
+        return outfile
     r = pyregion.open(filename)
     data = fits.getdata(img)
     for i, region in enumerate(r.get_filter()):
         mask = region.mask(data.shape)
         data[mask] = np.nan
     hdu = fits.PrimaryHDU(data)
-    hdu.writeto("masked.fits", overwrite=True)
-    return "masked.fits"
+    hdu.writeto(outfile, overwrite=True)
+    return outfile
 
 def run_sextractor(img, redo=False):
     """ Produces a catalogue of sources in a given field. """
@@ -65,12 +68,14 @@ def run_sextractor(img, redo=False):
     cat["table"].write("sexcat.fits", format="fits", overwrite=True)
     return outfile
 
-def mask_sources(img, cat, field):
+def mask_sources(img, cat, field, redo=False):
     """ Produces segmentation image with bins for detected sources using
     elliptical regions. """
+    outfile = "halo_only.fits"
+    if os.path.exists(outfile) and not redo:
+        return outfile
     data = fits.getdata(img)
     ydim, xdim = data.shape
-    extent = np.array([1, xdim, 1, ydim])
     xx, yy = np.meshgrid(np.arange(1, xdim + 1), np.arange(1, ydim + 1))
     table = Table.read(cat, 1)
     ignore = ignore_sources(field)
@@ -88,15 +93,8 @@ def mask_sources(img, cat, field):
     d = np.copy(data)
     d[segmentation!=0] = np.nan
     hdu = fits.PrimaryHDU(d)
-    hdu.writeto("masked_sources.fits", overwrite=True)
-    vmax = np.percentile(d[np.isfinite(d)], 99.5)
-    plt.subplot(131)
-    plt.imshow(data, origin="bottom", vmax=vmax, vmin=0)
-    plt.subplot(132)
-    plt.imshow(segmentation, origin="bottom", vmax=table["NUMBER"][-1])
-    plt.subplot(133)
-    plt.imshow(d, origin="bottom", vmax=vmax, vmin=0)
-    plt.show()
+    hdu.writeto(outfile, overwrite=True)
+    return outfile
 
 def calc_isophotes(x, y, x0, y0, PA, q):
     """ Calculate isophotes for a given component. """
@@ -117,64 +115,44 @@ def ignore_sources(field):
     else:
         return []
 
-def remove_sources(field):
-    """ Remove bad sources. """
-    if field == "fieldA":
-        sources = [45,32,26,12,19,6,50,5,104,54,100,48,52,18,63,112,103,114,8,
-                   49,46,42,38,31,13,7,4,30,44,16,17,1]
-    elif field == "fieldB":
-        sources = [9,45,2,3,1,24]
-    elif field == "fieldC":
-        sources = [23,3,4,5,12,90,75,77,85,71,82,24,21,11,44,50]
-    elif field == "fieldD":
-        sources = [73,78,8,64,66,68,24,23]
-    img = pf.getdata("segmentation.fits")
-    for source in sources:
-        img[img==source] = 0
-    pf.writeto("sources.fits", img, clobber=True)
+def simple_binning(img, field):
+    """ Includes additional bins to halo before Voronoi. """
+    outfile = "simple_binning.fits"
+    data = fits.getdata(img)
+    binning = np.zeros_like(data)
+    # Adding sources if necessary
+    newregions = "newsources.reg"
+    if os.path.exists(newregions):
+        r = pyregion.open(newregions)
+        for i, region in enumerate(r.get_filter()):
+            mask = region.mask(data.shape)
+            binning[mask] = i + 1
+    # Include radial bins in fields C and D
+    if field in ["fieldC", "fieldD"]:
+        refcube = context.get_field_files(field)[1]
+        ra = array_from_header(refcube, axis=1)
+        dec = array_from_header(refcube, axis=2)
+        # Ofset to the center of NGC 3311
+        ra -= context.ra0
+        dec -= context.dec0
+        # Convert to radians
+        X = context.D * 1000 * np.deg2rad(ra)
+        Y = context.D * 1000 * np.deg2rad(dec)
+        xx, yy = np.meshgrid(X,Y)
+        R = np.sqrt(xx**2 + yy**2)
+        Rbins = 10 + 35 * np.logspace(0.3,1,4, base=10) / 10
+        Rbins = np.hstack((10, Rbins))
+        for i,rbin in enumerate(Rbins[:-1]):
+            deltar = Rbins[i+1] - Rbins[i]
+            newbin = binning.max() + 1
+            idxbin = np.where((R > rbin) & (R <= rbin + deltar) & (binning==0))
+            if i == 3:
+                newbin = 0
+            binning[idxbin] = newbin
+    binning[np.isnan(data)] = np.nan
+    hdu = fits.PrimaryHDU(binning)
+    hdu.writeto(outfile, overwrite=True)
     return
-
-def include_regions():
-    region_name = "newsources.reg"
-    if not os.path.exists(region_name):
-        return
-    r = pyregion.open(region_name)
-    img = pf.getdata("sources.fits")
-    segments = pf.getdata("segmentation.fits")
-    segs = segments.max()
-    for i, region in enumerate(r.get_filter()):
-        mask = region.mask(img.shape)
-        img[mask] = segs + 1 + i
-    pf.writeto("sources.fits", img, clobber=True)
-    return
-
-def modify_binning(field):
-    if field in ["fieldA", "fieldB"]:
-        return
-    seg = pf.getdata("sources.fits")
-    white = [x for x in os.listdir(".") if "(white)" in x][0]
-    ra = wavelength_array(white, axis=1)
-    dec = wavelength_array(white, axis=2)
-    # Ofset to the center of NGC 3311
-    ra -= ra0
-    dec -= dec0
-    # Convert to radians
-    X = D * 1000 * np.deg2rad(ra)
-    Y = D * 1000 * np.deg2rad(dec)
-    xx, yy = np.meshgrid(X,Y)
-    R = np.sqrt(xx**2 + yy**2)
-    base = 10
-    Rbins = 10 + 35 * np.logspace(0.3,1,4, base=base) / base
-    Rbins = np.hstack((10, Rbins))
-    for i,rbin in enumerate(Rbins[:-1]):
-        deltar = Rbins[i+1] - Rbins[i]
-        newbin = seg.max() + 1
-        idxbin = np.where((R > rbin) & (R <= rbin + deltar) & (seg==0))
-        if i == 3:
-            newbin = 0
-        seg[idxbin] = newbin
-    pf.writeto("sources.fits", seg, clobber=True)
-
 
 if __name__ == "__main__":
     dataset = "MUSE-DEEP"
@@ -184,11 +162,7 @@ if __name__ == "__main__":
         os.chdir(os.path.join(data_dir, field))
         img, cube = context.get_field_files(field)
         imgum = make_unsharp_mask(img, redo=False)
-        immasked = mask_regions(imgum)
-        sexcat = run_sextractor(immasked, redo=True)
-        mask_sources(immasked, sexcat, field)
-        # remove_sources(field)
-        # remove_regions()
-        # include_regions()
-        # modify_binning(field)
-
+        immasked = mask_regions(imgum, redo=False)
+        sexcat = run_sextractor(immasked, redo=False)
+        imhalo = mask_sources(immasked, sexcat, field, redo=True)
+        simple_binning(imhalo, field)

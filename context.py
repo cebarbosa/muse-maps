@@ -15,6 +15,15 @@ data_dir = os.path.join(home, "data")
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
 
+# Constants
+D = 50.7 # Distance to the center of the Hydra I cluster in Mpc
+DL = 55.5# Luminosity distance
+velscale = 30. # Set velocity scale for pPXF related routines
+
+# Properties of the system
+ra0 = 159.178471651
+dec0 = -27.5281283035
+
 def get_field_files(field):
     """ Returns the names of the image and cube associated with a given
     field. """
