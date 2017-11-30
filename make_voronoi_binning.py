@@ -13,8 +13,9 @@ from __future__ import division, print_function
 import os
 
 import numpy as np
-from astropy.io import fits
+from astropy.io import fits, ascii
 import matplotlib.pyplot as plt
+from astropy.table import Table
 
 import context
 from misc import array_from_header
@@ -57,37 +58,51 @@ def collapse_cube(cubename, outfile, redo=False):
     hdulist.writeto(outfile, overwrite=True)
     return
 
-def calc_binning(w1, w2, targetSN):
-    """ Performs binning for a given MUSE collpsed cube. """
-    fits = "collapsed_w{0}_{1}.fits".format(w1, w2)
-    output = "voronoi_2d_sn{0}_w{1}_{2}.txt".format(targetSN, w1, w2)
-    badpix = fits.getdata(mask_file)
-    signal = fits.getdata(fits, 0)
-    noise = fits.getdata(fits, 1)
-    segments = fits.getdata(sources_file).astype(float)
-    ##########################################################################
+def calc_binning(signal, noise, mask, targetSN, redo=False):
+    """ Calculates Voronoi bins using only pixels in a mask.
+
+    Input Parameters
+    ----------------
+    signal : np.array
+        Signal image.
+
+    noise : np.array
+        Noise image.
+
+    mask : np.array
+        Mask for the combination. Excluded pixels are marked witn NaNs.
+        Segregation within mask is indicates by different non-NaN values.
+
+    redo : bool
+        Redo the work in case the output file already exists.
+
+    Output Parameters
+    -----------------
+    str
+        Name of the output ascii table.
+    """
+    output = "voronoi_table_sn{}.txt".format(targetSN)
+    if os.path.exists(output) and not redo:
+        return output
     # Preparing position arrays
     ydim, xdim = signal.shape
     x1 = np.arange(1, xdim+1)
     y1 = np.arange(1, ydim+1)
     xx, yy = np.meshgrid(x1, y1)
-    ##########################################################################
-    # Preparing arrays for masking
-    regions = badpix == 1. # Bad pixels from ds9 regions
-    signal[regions] = np.nan
     #########################################################################
-    # Flatten arrays
+    # Flatten arrays -- required by Voronoi bin
     signal = signal.flatten()
     noise = noise.flatten()
-    segments = segments.flatten()
+    mask = mask.flatten()
     xx = xx.flatten()
     yy = yy.flatten()
     #########################################################################
     # Masking
-    goodpix = np.logical_and(np.isfinite(signal), np.isfinite(noise))
+    goodpix = np.logical_and(np.logical_and(np.isfinite(mask), noise >=0.1),
+                             signal > 0)
     signal = signal[goodpix]
     noise = noise[goodpix]
-    segments = segments[goodpix]
+    segments = mask[goodpix]
     xx = xx[goodpix]
     yy = yy[goodpix]
     #########################################################################
@@ -98,10 +113,6 @@ def calc_binning(w1, w2, targetSN):
     di = 0
     deltabin = 0
     sources = np.unique(segments)
-    if os.path.exists("avoid_bins_sn{0}.txt".format(targetSN)):
-        avoid = np.loadtxt("avoid_bins_sn{0}.txt".format(targetSN))
-    else:
-        avoid = []
     for i,source in enumerate(sources[::-1]):
         print("Source {0}/{1:}".format(i+1, len(sources)))
         idx = segments == source
@@ -109,16 +120,13 @@ def calc_binning(w1, w2, targetSN):
         n = noise[idx]
         x = xx[idx]
         y = yy[idx]
-        if source in avoid:
+        try:
+            binNum, xNode, yNode, xBar, yBar, sn, nPixels, \
+            scale = voronoi_2d_binning(x, y, s, n, targetSN, plot=0,
+                                       quiet=0, pixelsize=1, cvt=False)
+            binNum += 1
+        except ValueError:
             binNum = np.ones_like(x)
-        else:
-            try:
-                binNum, xNode, yNode, xBar, yBar, sn, nPixels, \
-                scale = voronoi_2d_binning(x, y, s, n, targetSN, plot=0,
-                                           quiet=0, pixelsize=1, cvt=False)
-                binNum += 1
-            except ValueError:
-                 binNum = np.ones_like(x)
         binNum += deltabin
         newx[di:len(x)+di] = x
         newy[di:len(y)+di] = y
@@ -126,41 +134,64 @@ def calc_binning(w1, w2, targetSN):
         deltabin = binNum.max()
         di += len(x)
     ##########################################################################
-    # Save to a text file the initial coordinates of each pixel together
-    # with the corresponding bin number computed by this procedure.
-    # binNum uniquely specifies the bins and for this reason it is the only
-    # number required for any subsequent calculation on the bins.
-    #
-    np.savetxt(output, np.column_stack([newx, newy, bins]),
-               fmt=b'%10.6f %10.6f %8i')
-    return
+    table = Table([newx, newy, bins], names=["X_IMAGE", "Y_IMAGE",
+                                             "BIN_NUMBER"])
+    table.write(output, format="ascii", overwrite=True)
+    return output
 
-def make_voronoi_image(w1, w2, targetSN):
-    """ Produces an check image for the Voronoi Tesselation. """
-    voronoi_file = "voronoi_2d_sn{0}_w{1}_{2}.txt".format(targetSN, w1, w2)
-    fits = "collapsed_w{0}_{1}.fits".format(w1, w2)
-    xpixel, ypixel, binnum = np.loadtxt(voronoi_file).T
-    img = fits.getdata(fits)
-    binimg = np.zeros_like(img)
-    binimg[:] = np.nan
-    ydim, xdim = img.shape
+def make_voronoi_image(bintable, img, targetSN, redo=False):
+    """ Produces an check image for the Voronoi Tesselation.
+
+    Input Parameters
+    ----------------
+    bintable : str
+        Table containing at least three columns with denominations X_IMAGE,
+        Y_IMAGE and BIN_NUMBER.
+
+    img : str
+        Fits file image name to determine the dimension of the output image.
+
+    targetSN : float
+        Indicates the S/N ratio of the input tesselation to determine the
+        output file name.
+
+    redo : bool
+        Redo the work in case the output file already exists.
+
+    Output Parameters:
+        str
+        Name of the output image containing the Voronoi tesselation in 2D.
+    """
+    output = "voronoi2d_sn{}.fits".format(targetSN)
+    if os.path.exists(output) and not redo:
+        return output
+    tabledata = ascii.read(bintable)
+    imgdata = fits.getdata(img)
+    binimg = np.zeros_like(imgdata) * np.nan
     # Making binning scheme
-    for x,y,value in zip(ypixel.astype(int), xpixel.astype(int), binnum):
-        binimg[x-1,y-1] = value
-    fits.writeto("voronoi_sn{0}_w{1}_{2}.fits".format(targetSN, w1, w2),
-               binimg, clobber=True)
-    plt.savefig("figs/voronoi_sn{0}_w{1}_{2}.png".format(targetSN, w1, w2))
-    plt.clf()
-    return
+    for line in tabledata:
+        i, j = int(line["X_IMAGE"]) - 1, int(line["Y_IMAGE"]) - 1
+        binimg[j,i] = line["BIN_NUMBER"]
+    hdu = fits.PrimaryHDU(binimg)
+    hdu.writeto(output, overwrite=True)
+    return output
 
-def combine_spectra(w1, w2, targetSN):
-    """ Produces the combined spectra for a given binning file. """
-    datacube = [x for x in os.listdir(".") if "DATACUBE_FINAL" in x][0]
-    voronoi = "voronoi_sn{0}_w{1}_{2}.fits".format(targetSN, w1, w2)
-    data = fits.getdata(datacube, 1)
+def combine_spectra(cubename, voronoi2D, targetSN):
+    """ Produces the combined spectra for a given binning file.
+
+    Input Parameters
+    ----------------
+    cubename : str
+        File for the data cube
+    voronoi2D : str
+        Fits image containing the Voronoi scheme.
+
+
+    """
+    data = fits.getdata(cubename, 1)
     #########################################################################
     # Adapt header
-    h = fits.getheader(datacube, 1)
+    h = fits.getheader(cubename, 1)
     h["NAXIS"] = 2
     kws = ["CRVAL1", "CD1_1", "CRPIX1", 'CUNIT1', "CTYPE1"]
     h['CUNIT1'] = h['CUNIT3']
@@ -176,7 +207,7 @@ def combine_spectra(w1, w2, targetSN):
     ##########################################################################
     zdim, ydim, xdim = data.shape
     h["NAXIS1"] = zdim
-    vordata = pf.getdata(voronoi)
+    vordata = fits.getdata(voronoi2D)
     vordata = np.ma.array(vordata, mask=np.isnan(vordata))
     bins = np.unique(vordata)[:-1]
     h["NAXIS2"] = bins.size
@@ -189,7 +220,7 @@ def combine_spectra(w1, w2, targetSN):
     print("Writing to disk...")
     hdu = fits.PrimaryHDU(combined, h)
     hdulist = fits.HDUList([hdu])
-    hdulist.writeto("binned_sn{0}.fits".format(targetSN), clobber=True)
+    hdulist.writeto("binned_sn{0}.fits".format(targetSN), overwrite=True)
     print("Done!")
     return
 
@@ -202,13 +233,10 @@ def run(fields, targetSN=70, dataset="MUSE"):
         collapse_cube(cubename, newimg, redo=False)
         signal = fits.getdata(newimg, 0)
         noise = fits.getdata(newimg, 1)
-        # plt.imshow(signal / noise, origin="bottom", vmin=0, vmax=2)
-        # plt.colorbar()
-        # plt.show()
-        # break
-        # calc_binning(img, targetSN)
-        # make_voronoi_image(w1, w2, targetSN)
-        # combine_spectra(w1, w2, targetSN)
+        mask = fits.getdata("simple_binning.fits")
+        bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
+        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=False)
+        combine_spectra(cubename, voronoi2D, targetSN)
 
 
 if __name__ == '__main__':

@@ -9,13 +9,15 @@ E-mail: michele.cappellari_at_physics.ox.ac.uk
         MC, Leiden, 24 July 2003
     V2.0.0: Translated from IDL into Python. MC, London, 19 March 2014
     V2.0.1: Support both Python 2.6/2.7 and Python 3.x. MC, Oxford, 25 May 2014
+    V2.0.2: Make files paths relative to this file, to run the example from
+        any directory. MC, Oxford, 23 January 2017
 
 """
 
 from __future__ import print_function
 
+from os import path
 import numpy as np
-from time import clock
 
 from voronoi_2d_binning import voronoi_2d_binning
 
@@ -31,8 +33,8 @@ def voronoi_binning_example():
     and the corresponding Signal and Noise.
 
     """
-
-    x, y, signal, noise = np.loadtxt('voronoi_2d_binning_example.txt', unpack=1, skiprows=3)
+    file_dir = path.dirname(path.realpath(__file__))  # path of this procedure
+    x, y, signal, noise = np.loadtxt(file_dir + '/voronoi_2d_binning_example.txt', unpack=1, skiprows=3)
     targetSN = 50.0
 
     # Perform the actual computation. The vectors
@@ -54,6 +56,4 @@ def voronoi_binning_example():
 
 if __name__ == '__main__':
 
-    t = clock()
     voronoi_binning_example()
-    print('Elapsed time: %.2f seconds' % (clock() - t))

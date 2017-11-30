@@ -71,4 +71,4 @@ Michele Cappellari
 cappellari_at_astro.ox.ac.uk
 Vicenza, 13 February 2003
 
-Last software update 2 October 2014
+Last software update 31 March 2016
