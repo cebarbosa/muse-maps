@@ -90,7 +90,6 @@ def plot_vel_resolution():
     plt.style.use("seaborn-paper")
     plt.figure(1)
     plt.minorticks_on()
-    print(c)
     plt.plot(wave, c.to("km/s") * f(wave) / wave / 2.634, "-")
     plt.xlabel("$\lambda$ ($\AA$)")
     plt.ylabel(r"Velocity scale - sigma (km/s)")
