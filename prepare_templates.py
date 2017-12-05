@@ -15,7 +15,6 @@ from itertools import product
 
 import numpy as np
 import astropy.units as u
-from astropy.io import fits
 from astropy.table import Table
 
 from specutils.io import read_fits
@@ -24,9 +23,12 @@ import context
 
 class EMiles_models():
     """ Class to handle data from the EMILES SSP models. """
-    def __init__(self, sample=None):
-        self.path = os.path.join(context.home,
-                                 "models/EMILES_BASTI_INTERPOLATED")
+    def __init__(self, sample=None, path=None, w1=4500, w2=10000):
+        if path is None:
+            self.path = os.path.join(context.home,
+                        "models/EMILES_BASTI_w{}_{}".format(w1, w2))
+        else:
+            self.path = path
         self.sample = "all" if sample is None else sample
         if self.sample not in ["all", "test"]:
             raise(ValueError, "Subsample not valid")
@@ -92,5 +94,6 @@ def trim_templates(emiles, w1=4500, w2=10000):
 
 
 if __name__ == "__main__":
-    emiles = EMiles_models()
+    emiles = EMiles_models(path=os.path.join(context.home,
+                                             "EMILES_BASTI_INTERPOLATED"))
     trim_templates(emiles)
