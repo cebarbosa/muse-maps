@@ -40,3 +40,12 @@ def get_field_files(field):
         img = "ADP.2017-03-27T12:49:43.636.fits"
         cube = "ADP.2017-03-27T12:49:43.635.fits"
     return img, cube
+
+# Emission lines used in the projects
+def get_emission_lines():
+    """ Returns dictionaries containing the emission lines to be used. """
+    lines = (("Hbeta_4861", 4861.333), ("OIII_4959", 4958.91),
+             ("OIII_5007", 5006.84), ("NII_6550", 6549.86),
+             ("Halpha_6565", 6564.61), ("NII_6585", 6585.27),
+             ("SII_6718", 6718.29), ("SII_6733", 6732.67))
+    return lines
