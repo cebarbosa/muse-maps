@@ -12,14 +12,20 @@ from __future__ import print_function, division
 
 import os
 from itertools import product
+from datetime import datetime
 
 import numpy as np
 import astropy.units as u
 from astropy.table import Table
+from astropy.io import fits
+import multiprocessing as mp
 
 from specutils.io import read_fits
 
+import ppxf.ppxf_util as util
+
 import context
+from muse_resolution import broad2res
 
 class EMiles_models():
     """ Class to handle data from the EMILES SSP models. """
@@ -31,7 +37,8 @@ class EMiles_models():
             self.path = path
         self.sample = "all" if sample is None else sample
         if self.sample not in ["all", "test"]:
-            raise(ValueError, "Subsample not valid")
+            raise ValueError("EMILES sample not defined: {}".format(
+                self.sample))
         self.values = self.Values(self.sample)
 
     class Values():
@@ -50,7 +57,7 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 27)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
-            elif sample == "testing":
+            elif sample == "test":
                 self.exponents = np.array([2.3, 2.5])
                 self.ZH = np.array([0.06, 0.15])
                 self.age = np.array([10., 14.])
@@ -68,10 +75,12 @@ class EMiles_models():
                "8:1.1f}.fits".format(imf, msign, abs(metal), azero, age, esign,
                                      abs(alpha), nasign, na)
 
-def trim_templates(emiles, w1=4500, w2=10000):
+def trim_templates(emiles, w1=4500, w2=10000, redo=False):
     """ Slice spectra from templates according to wavelength range. """
     newpath = os.path.join(context.home, "models/EMILES_BASTI_w{}_{}".format(
                            w1, w2))
+    if os.path.exists(newpath) and not redo:
+        return
     if not os.path.exists(newpath):
         os.mkdir(newpath)
     for args in product(emiles.values.exponents, emiles.values.ZH,
@@ -88,12 +97,91 @@ def trim_templates(emiles, w1=4500, w2=10000):
                     names=["wave", "flux"])
         tab.write(newfilename, format="fits")
         print("Created file ", newfilename)
-
     return
 
+def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
+    """ Pipeline for the preparation of the templates."""
+    output = os.path.join(context.home, "templates",
+            "emiles_muse_vel{}_w{}_{}_{}.fits".format(velscale, w1, w2, sample))
+    if os.path.exists(output) and not redo:
+        return
+    fwhm = 2.95
+    emiles = EMiles_models(path=os.path.join(context.home, "models",
+                           "EMILES_BASTI_w{}_{}".format(w1, w2)), sample=sample)
+    trim_templates(emiles, redo=False)
+    # First part: getting SSP templates
+    grid = np.array(np.meshgrid(emiles.values.exponents, emiles.values.ZH,
+                             emiles.values.age, emiles.values.alphaFe,
+                             emiles.values.NaFe)).T.reshape(-1, 5)
+    filenames = []
+    for args in grid:
+        filenames.append(os.path.join(emiles.path, emiles.get_filename(*args)))
+    dim = len(grid)
+    params = np.zeros((dim, 5))
+    # Using first spectrum to build arrays
+    filename = os.path.join(emiles.path, emiles.get_filename(*grid[0]))
+    spec = Table.read(filename, format="fits")
+    wave = spec["wave"]
+    wrange = [wave[0], wave[-1]]
+    flux = spec["flux"]
+    newflux, logLam, velscale = util.log_rebin(wrange, flux,
+                                               velscale=velscale)
+    ssps = np.zeros((dim, len(logLam)))
+    # Iterate over all models
+    newfolder = os.path.join(context.home, "templates", \
+                             "vel{}_w{}_{}".format(velscale, w1, w2))
+    if not os.path.exists(newfolder):
+        os.mkdir(newfolder)
+    ############################################################################
+    # Sub routine to process a single spectrum
+    def process_spec(filename, redo=False):
+        global velscale
+        outname = os.path.join(newfolder, os.path.split(filename)[1])
+        if os.path.exists(outname) and not redo:
+            return
+        spec = Table.read(filename, format="fits")
+        flux = spec["flux"]
+        flux = broad2res(wave, flux.T, np.ones_like(wave) * 2.51, res=fwhm)[0].T
+        newflux, logLam, velscale = util.log_rebin(wrange, flux,
+                                               velscale=velscale)
 
+        hdu = fits.PrimaryHDU(newflux)
+        hdu.writeto(outname, overwrite=True)
+        return
+    ############################################################################
+    for i, fname in enumerate(filenames):
+        print("Processing SSP {}".format(i+1))
+        process_spec(fname)
+    for i, args in enumerate(grid):
+        print("Processing SSP {}".format(i+1))
+        filename = os.path.join(newfolder, emiles.get_filename(*args))
+        data = fits.getdata(filename)
+        ssps[i] = data
+        params[i] = args
+    # Second part : emission line templates
+    emlines = context.get_emission_lines()
+    sigma = fwhm / (2. * np.sqrt(2. * np.log(2.)))
+    wave = np.exp(logLam)
+    emission= np.zeros((len(emlines), len(logLam)))
+    for i, eml in enumerate(emlines):
+        print("Processing emission line {}".format(i+1))
+        lname, lwave = eml
+        emission[i] = np.exp(-(wave - lwave) ** 2 / (2 * sigma * sigma))
+    hdu1 = fits.PrimaryHDU(ssps)
+    hdu2 = fits.ImageHDU(emission)
+    hdu3 = fits.ImageHDU(params)
+    hdu1.header["CRVAL1"] = logLam[0]
+    hdu1.header["CD1_1"] = logLam[1] - logLam[0]
+    hdu1.header["CRPIX1"] = 1.
+    hdulist = fits.HDUList([hdu1, hdu2, hdu3])
+    hdulist.writeto(output, overwrite=True)
+    return
 
 if __name__ == "__main__":
-    emiles = EMiles_models(path=os.path.join(context.home,
-                                             "EMILES_BASTI_INTERPOLATED"))
-    trim_templates(emiles)
+    w1 = 4500
+    w2 = 10000
+    velscale = 30 # km / s
+    starttime = datetime.now()
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False)
+    endtime = datetime.now()
+    print("The program took {} to run".format(endtime - starttime))
