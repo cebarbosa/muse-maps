@@ -57,12 +57,10 @@ def broad2res(w, specs, obsres, res=2.95):
     specs = np.atleast_2d(specs)
     dw = np.diff(w)[0]
     sigma_diff = np.sqrt(res**2 - obsres**2) / 2.3548 / dw
-    if isinstance(sigma_diff, float):
-        sigma_diff = np.repeat(sigma_diff, len(w))
     broad = np.zeros_like(specs)
-    print "Processing broadening"
+    # print "Processing broadening"
     for i,spec in enumerate(specs):
-        print "Spectra {0}/{1}".format(i+1, len(specs))
+        # print "Spectra {0}/{1}".format(i+1, len(specs))
         d = np.diag(spec)
         for j in range(len(w)):
             d[j] = gaussian_filter1d(d[j], sigma_diff[j], mode="constant",
@@ -94,6 +92,7 @@ def plot_vel_resolution():
     plt.xlabel("$\lambda$ ($\AA$)")
     plt.ylabel(r"Velocity scale - sigma (km/s)")
     plt.show()
+
 
 if __name__ == "__main__":
     # plot_muse_fwhm()
