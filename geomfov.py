@@ -14,6 +14,7 @@ import os
 
 import numpy as np
 from astropy.io import fits
+from astropy.table import Table
 
 import context
 from misc import array_from_header
@@ -32,18 +33,13 @@ def calc_extent(image, extension=1):
     extent = np.array([X[0], X[-1], Y[0], Y[-1]])
     return extent
 
-def calc_geom(sn, field):
+def calc_geom(binfile, imgfile):
     """Calculate the location of bins for a given target S/N and field. """
-    binsfile = "voronoi_sn{0}_w4500_5500.fits".format(sn)
-    binimg = fits.getdata(os.path.join(context.data_dir, "combined_{}".format(
-             field), binsfile))
-    ydim, xdim = binimg.shape
-    intens = os.path.join(os.path.join(context.data_dir, "combined_{}".format(
-        field),
-                                "collapsed_w4500_5500.fits"))
-    extent = calc_extent(intens)
+    binimg = fits.getdata(binfile)
+    extent = calc_extent(imgfile)
     #  TODO: check if geometry is correct in MUSE-DEEP data set
     # extent = offset_extent(extent, field)
+    ydim, xdim = binimg.shape
     x = np.linspace(extent[0], extent[1], xdim)
     y = np.linspace(extent[2], extent[3], ydim)
     xx, yy = np.meshgrid(x, y)
@@ -63,5 +59,10 @@ def calc_geom(sn, field):
     ycen = ["{0:.5f}".format(x) for x in ycen]
     radius = ["{0:.5f}".format(x) for x in radius]
     pa = ["{0:.5f}".format(x) for x in pa]
-    specs = np.array(["{0}_bin{1:04d}".format(field, x) for x in bins])
-    return np.column_stack((specs, xcen, ycen, radius, pa))
+    specs = np.array(["{0:04d}".format(x) for x in bins])
+    table = Table(data=[specs, xcen, ycen, radius, pa], names=["BIN", "X",
+                                                               "Y", "R", "PA"])
+    return table
+
+if __name__ == "__main__":
+    pass
