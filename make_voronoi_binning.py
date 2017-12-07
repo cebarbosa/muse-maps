@@ -14,13 +14,13 @@ import os
 
 import numpy as np
 from astropy.io import fits, ascii
-import matplotlib.pyplot as plt
 from astropy.table import Table
+import matplotlib.pyplot as plt
 
-import context
-from misc import array_from_header
 from voronoi.voronoi_2d_binning import voronoi_2d_binning
 
+import context
+from geomfov import calc_geom
 def collapse_cube(cubename, outfile, redo=False):
     """ Collapse a MUSE data cube to produce a white-light image and a
     noise image.
@@ -176,22 +176,46 @@ def make_voronoi_image(bintable, img, targetSN, redo=False):
     hdu.writeto(output, overwrite=True)
     return output
 
-def combine_spectra(cubename, voronoi2D, targetSN):
+def sort_voronoi2D(voronoi2D, imgname):
+    """ Sort Voronoi tesselation to be increasing as a function of the radius"""
+    vor = fits.getdata(voronoi2D)
+    newvor = np.zeros_like(vor) * np.nan
+    geom = calc_geom(voronoi2D, imgname)
+    r = np.array(geom["R"]).astype(float)
+    idx = np.argsort(r)
+    geom = geom[idx]
+    for i, line in enumerate(geom):
+        idx = np.where(vor == float(line["BIN"]))
+        newvor[idx] = i+1
+    hdu = fits.PrimaryHDU(newvor)
+    hdu.writeto(voronoi2D, overwrite=True)
+    return voronoi2D
+
+def combine_spectra(cubename, voronoi2D, targetSN, redo=False):
     """ Produces the combined spectra for a given binning file.
 
     Input Parameters
     ----------------
     cubename : str
         File for the data cube
+
     voronoi2D : str
         Fits image containing the Voronoi scheme.
 
+    targetSN : float
+        Value of the S/N ratio used in the tesselation
+
+    redo : bool
+        Redo combination in case the output file already exists.
 
     """
+    output = "binned_sn{0}.fits".format(targetSN)
+    if os.path.exists(output) and not redo:
+        return
     data = fits.getdata(cubename, 1)
+    h = fits.getheader(cubename, 1)
     #########################################################################
     # Adapt header
-    h = fits.getheader(cubename, 1)
     h["NAXIS"] = 2
     kws = ["CRVAL1", "CD1_1", "CRPIX1", 'CUNIT1', "CTYPE1"]
     h['CUNIT1'] = h['CUNIT3']
@@ -213,16 +237,16 @@ def combine_spectra(cubename, voronoi2D, targetSN):
     h["NAXIS2"] = bins.size
     combined = np.zeros((bins.size,zdim))
     for j, bin in enumerate(bins):
-        print("Bin {0} / {1}".format(j+1, bins.size))
         idx, idy = np.where(vordata == bin)
+        print("Bin {0} / {1} (ncombine={2})".format(j + 1, bins.size, len(idx)))
         specs = data[:,idx,idy]
         combined[j,:] = np.nanmean(specs, axis=1)
     print("Writing to disk...")
     hdu = fits.PrimaryHDU(combined, h)
     hdulist = fits.HDUList([hdu])
-    hdulist.writeto("binned_sn{0}.fits".format(targetSN), overwrite=True)
+    hdulist.writeto(output, overwrite=True)
     print("Done!")
-    return
+    return output
 
 def run(fields, targetSN=70, dataset="MUSE"):
     for field in fields:
@@ -235,8 +259,9 @@ def run(fields, targetSN=70, dataset="MUSE"):
         noise = fits.getdata(newimg, 1)
         mask = fits.getdata("simple_binning.fits")
         bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
-        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=False)
-        combine_spectra(cubename, voronoi2D, targetSN)
+        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=True)
+        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
+        combined = combine_spectra(cubename, voronoi2D, targetSN, redo=True)
 
 
 if __name__ == '__main__':
