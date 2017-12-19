@@ -21,6 +21,7 @@ from voronoi.voronoi_2d_binning import voronoi_2d_binning
 
 import context
 from geomfov import calc_geom
+
 def collapse_cube(cubename, outfile, redo=False):
     """ Collapse a MUSE data cube to produce a white-light image and a
     noise image.
@@ -259,9 +260,13 @@ def run(fields, targetSN=70, dataset="MUSE"):
         noise = fits.getdata(newimg, 1)
         mask = fits.getdata("simple_binning.fits")
         bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
-        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=True)
-        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
-        combined = combine_spectra(cubename, voronoi2D, targetSN, redo=True)
+        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=False)
+        geom = calc_geom(voronoi2D, imgname)
+        print(np.array(geom["BIN"]))
+        plt.plot(np.array(geom["BIN"]).astype(float), np.array(geom["R"]).astype(float), "o")
+        plt.show()
+        # voronoi2D = sort_voronoi2D(voronoi2D, imgname)
+        # combined = combine_spectra(cubename, voronoi2D, targetSN, redo=False)
 
 
 if __name__ == '__main__':

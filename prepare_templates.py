@@ -18,7 +18,6 @@ import numpy as np
 import astropy.units as u
 from astropy.table import Table
 from astropy.io import fits
-import multiprocessing as mp
 
 from specutils.io import read_fits
 
