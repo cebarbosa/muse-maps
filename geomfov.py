@@ -64,5 +64,18 @@ def calc_geom(binfile, imgfile):
                                                                "Y", "R", "PA"])
     return table
 
+def calc_isophotes(x, y, x0, y0, PA, q):
+    """ Calculate isophotes for a given component. """
+    x = np.copy(x) - x0
+    y = np.copy(y) - y0
+    shape = x.shape
+    theta = np.radians(PA)
+    c, s = np.cos(theta), np.sin(theta)
+    rot = np.array([[s, c], [-c, s]])
+    xy = np.dot(np.column_stack((x.flatten(), y.flatten())), rot).T
+    x = np.reshape(xy[0], newshape=shape)
+    y = np.reshape(xy[1], newshape=shape)
+    return np.sqrt(np.power(x, 2) + np.power(y / q, 2))
+
 if __name__ == "__main__":
     pass
