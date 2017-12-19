@@ -24,9 +24,10 @@ import sewpy
 import context
 from misc import array_from_header
 
-def make_unsharp_mask(img, redo=False):
+def make_unsharp_mask(img, redo=False, output=None):
     """ Produces unsharp mask of a given image. """
-    output = "unsharp_mask.fits"
+    if output is None:
+        output = "unsharp_mask.fits"
     if os.path.exists(output) and not redo:
         return output
     kernel = Gaussian2DKernel(5)
@@ -53,9 +54,10 @@ def mask_regions(img, redo=False):
     hdu.writeto(outfile, overwrite=True)
     return outfile
 
-def run_sextractor(img, redo=False):
+def run_sextractor(img, redo=False, outfile=None):
     """ Produces a catalogue of sources in a given field. """
-    outfile = "sexcat.fits"
+    if outfile is None:
+        outfile = "sexcat.fits"
     if os.path.exists(outfile) and not redo:
         return outfile
     params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "KRON_RADIUS", "ELLIPTICITY",
@@ -63,17 +65,18 @@ def run_sextractor(img, redo=False):
     config = {"CHECKIMAGE_TYPE": "SEGMENTATION",
                             "CHECKIMAGE_NAME": "segmentation.fits",
                             "DETECT_THRESH" : 1.5}
-    sew = sewpy.SEW(config=config, sexpath="sex", params=params)
+    sew = sewpy.SEW(config=config, sexpath="sextractor", params=params)
     cat = sew(img)
-    cat["table"].write("sexcat.fits", format="fits", overwrite=True)
+    cat["table"].write(outfile, format="fits", overwrite=True)
     return outfile
 
-def mask_sources(img, cat, field, redo=False):
+def mask_sources(img, cat, field, redo=False, output=None):
     """ Produces segmentation image with bins for detected sources using
     elliptical regions. """
-    outfile = "halo_only.fits"
-    if os.path.exists(outfile) and not redo:
-        return outfile
+    if output is None:
+        output = "halo_only.fits"
+    if os.path.exists(output) and not redo:
+        return output
     data = fits.getdata(img)
     ydim, xdim = data.shape
     xx, yy = np.meshgrid(np.arange(1, xdim + 1), np.arange(1, ydim + 1))
@@ -93,8 +96,8 @@ def mask_sources(img, cat, field, redo=False):
     d = np.copy(data)
     d[segmentation!=0] = np.nan
     hdu = fits.PrimaryHDU(d)
-    hdu.writeto(outfile, overwrite=True)
-    return outfile
+    hdu.writeto(output, overwrite=True)
+    return output
 
 def calc_isophotes(x, y, x0, y0, PA, q):
     """ Calculate isophotes for a given component. """
