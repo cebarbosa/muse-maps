@@ -24,22 +24,29 @@ velscale = 30. # Set velocity scale for pPXF related routines
 ra0 = 159.178471651
 dec0 = -27.5281283035
 
-def get_field_files(field):
+def get_field_files(field, dataset):
     """ Returns the names of the image and cube associated with a given
     field. """
-    if field == "fieldA":
-        img = "ADP.2017-03-27T12:49:43.628.fits"
-        cube = "ADP.2017-03-27T12:49:43.627.fits"
-    elif field == "fieldB":
-        img = "ADP.2017-03-27T12:49:43.652.fits"
-        cube = "ADP.2017-03-27T12:49:43.651.fits"
-    elif field == "fieldC":
-        img = "ADP.2017-03-27T12:49:43.644.fits"
-        cube = "ADP.2017-03-27T12:49:43.643.fits"
-    elif field == "fieldD":
-        img = "ADP.2017-03-27T12:49:43.636.fits"
-        cube = "ADP.2017-03-27T12:49:43.635.fits"
-    return img, cube
+    if dataset == "MUSE-DEEP":
+        wdir = os.path.join(data_dir, "MUSE-DEEP")
+        if field == "fieldA":
+            img = "ADP.2017-03-27T12:49:43.628.fits"
+            cube = "ADP.2017-03-27T12:49:43.627.fits"
+        elif field == "fieldB":
+            img = "ADP.2017-03-27T12:49:43.652.fits"
+            cube = "ADP.2017-03-27T12:49:43.651.fits"
+        elif field == "fieldC":
+            img = "ADP.2017-03-27T12:49:43.644.fits"
+            cube = "ADP.2017-03-27T12:49:43.643.fits"
+        elif field == "fieldD":
+            img = "ADP.2017-03-27T12:49:43.636.fits"
+            cube = "ADP.2017-03-27T12:49:43.635.fits"
+        return os.path.join(wdir, img), os.path.join(wdir, cube)
+    elif dataset=="MUSE":
+        wdir = os.path.join(data_dir, "MUSE-DEEP", field)
+        raise(NotImplementedError)
+    else:
+        raise ValueError("Data set name not defined: {}".format(dataset))
 
 # Emission lines used in the projects
 def get_emission_lines():
