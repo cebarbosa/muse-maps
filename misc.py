@@ -18,3 +18,13 @@ def array_from_header(filename, axis=3, extension=1):
     pix0 = fits.getval(filename, "CRPIX{0}".format(axis), extension)
     npix = fits.getval(filename, "NAXIS{0}".format(axis), extension)
     return w0 + deltaw * (np.arange(npix) + 1 - pix0)
+
+def snr(flux, axis=0):
+    """ Calculates the S/N ratio of a spectra.
+
+    Translated from the IDL routine der_snr.pro """
+    signal = np.nanmedian(flux, axis=axis)
+    noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.*flux - \
+           np.roll(flux, 2, axis=axis) - np.roll(flux, -2, axis=axis)), \
+           axis=axis)
+    return signal, noise, signal / noise
