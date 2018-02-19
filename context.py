@@ -24,11 +24,11 @@ velscale = 30. # Set velocity scale for pPXF related routines
 ra0 = 159.178471651
 dec0 = -27.5281283035
 
-def get_field_files(field, dataset):
+def get_field_files(field, dataset="MUSE-DEEP"):
     """ Returns the names of the image and cube associated with a given
     field. """
     if dataset == "MUSE-DEEP":
-        wdir = os.path.join(data_dir, "MUSE-DEEP")
+        wdir = os.path.join(data_dir, "MUSE-DEEP", field)
         if field == "fieldA":
             img = "ADP.2017-03-27T12:49:43.628.fits"
             cube = "ADP.2017-03-27T12:49:43.627.fits"
