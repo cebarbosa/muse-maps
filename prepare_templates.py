@@ -35,7 +35,7 @@ class EMiles_models():
         else:
             self.path = path
         self.sample = "all" if sample is None else sample
-        if self.sample not in ["all", "test"]:
+        if self.sample not in ["all", "test", "salpeter_regular"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
         self.values = self.Values(self.sample)
@@ -51,8 +51,7 @@ class EMiles_models():
                      1.8, 2.0, 2.3, 2.5, 2.8, 3.0,
                      3.3, 3.5])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
-                                               0.15,
-                                               0.26, 0.4])
+                                     0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 27)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
@@ -62,6 +61,13 @@ class EMiles_models():
                 self.age = np.array([10., 14.])
                 self.alphaFe = np.array([0., 0.2])
                 self.NaFe = np.array([0., 0.3])
+            elif sample == "salpeter_regular":
+                self.exponents = np.array([2.3])
+                self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
+                                     0.15,  0.26,  0.4])
+                self.age = np.linspace(1., 14., 14)
+                self.alphaFe = np.array([0., 0.2, 0.4])
+                self.NaFe = np.array([0., 0.3, 0.6])
             return
 
     def get_filename(self, imf, metal, age, alpha, na):
@@ -78,8 +84,6 @@ def trim_templates(emiles, w1=4500, w2=10000, redo=False):
     """ Slice spectra from templates according to wavelength range. """
     newpath = os.path.join(context.home, "models/EMILES_BASTI_w{}_{}".format(
                            w1, w2))
-    if os.path.exists(newpath) and not redo:
-        return
     if not os.path.exists(newpath):
         os.mkdir(newpath)
     for args in product(emiles.values.exponents, emiles.values.ZH,
@@ -105,9 +109,11 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
     if os.path.exists(output) and not redo:
         return
     fwhm = 2.95
+    emiles_base = EMiles_models(path=os.path.join(context.home, "models",
+                              "EMILES_BASTI_INTERPOLATED"), sample=sample)
+    trim_templates(emiles_base, w1=w1, w2=w2, redo=False)
     emiles = EMiles_models(path=os.path.join(context.home, "models",
                            "EMILES_BASTI_w{}_{}".format(w1, w2)), sample=sample)
-    trim_templates(emiles, redo=False)
     # First part: getting SSP templates
     grid = np.array(np.meshgrid(emiles.values.exponents, emiles.values.ZH,
                              emiles.values.age, emiles.values.alphaFe,
@@ -178,9 +184,10 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
 
 if __name__ == "__main__":
     w1 = 4500
-    w2 = 10000
+    w2 = 5500
     velscale = 30 # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False)
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter_regular",
+                                  redo=False)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
