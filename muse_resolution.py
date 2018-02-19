@@ -8,12 +8,15 @@ Created on 04/05/16
 Calculates and plot the spectral resolution of MUSE.
 
 """
+from __future__ import print_function
 import os
 
 import numpy as np
 from astropy import units as u
+from astropy.io import fits
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter1d
+from specutils.io import read_fits
 
 import context
 
@@ -93,7 +96,33 @@ def plot_vel_resolution():
     plt.ylabel(r"Velocity scale - sigma (km/s)")
     plt.show()
 
+def broad_binned(fields, res, targetSN=70, dataset="MUSE-DEEP"):
+    """ Performs convolution to homogeneize the resolution. """
+    for field in fields:
+        print(field)
+        input_dir = os.path.join(context.data_dir, dataset, field, "spec1d")
+        output_dir = os.path.join(context.data_dir, dataset, field,
+                                  "spec1d_FWHM{}".format(res))
+        if not(os.path.exists(output_dir)):
+            os.mkdir(output_dir)
+        specs = sorted([_ for _ in os.listdir(input_dir) if "sn{}".format(
+                        targetSN) in _])
+        for i, filename in enumerate(specs):
+            print("Convolving file {} ({} / {})".format(filename, i+1,
+                                                        len(specs)))
+            filepath = os.path.join(input_dir, filename)
+            spec = read_fits.read_fits_spectrum1d(filepath)
+            wave = spec.wavelength.to("AA").value
+            flux = spec.flux
+            muse_fwhm = get_muse_fwhm()
+            obsres = muse_fwhm(wave)
+            broad = broad2res(wave, flux, obsres, res)[0]
+            h = fits.getheader(filepath)
+            hdu = fits.PrimaryHDU(data=broad.value, header=h)
+            hdulist = fits.HDUList([hdu])
+            hdulist.writeto(os.path.join(output_dir, filename), overwrite=True)
 
 if __name__ == "__main__":
     # plot_muse_fwhm()
-    plot_vel_resolution()
+    # plot_vel_resolution()
+    broad_binned(context.fields, 2.95)
