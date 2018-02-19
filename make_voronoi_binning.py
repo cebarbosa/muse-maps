@@ -15,7 +15,7 @@ import os
 import numpy as np
 from astropy.io import fits, ascii
 from astropy.table import Table
-import matplotlib.pyplot as plt
+from specutils.io import read_fits
 
 from voronoi.voronoi_2d_binning import voronoi_2d_binning
 
@@ -192,7 +192,7 @@ def sort_voronoi2D(voronoi2D, imgname):
     hdu.writeto(voronoi2D, overwrite=True)
     return voronoi2D
 
-def combine_spectra(cubename, voronoi2D, targetSN, redo=False):
+def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
     """ Produces the combined spectra for a given binning file.
 
     Input Parameters
@@ -207,49 +207,57 @@ def combine_spectra(cubename, voronoi2D, targetSN, redo=False):
         Value of the S/N ratio used in the tesselation
 
     redo : bool
-        Redo combination in case the output file already exists.
+        Redo combination in case the output spec already exists.
 
     """
-    output = "binned_sn{0}.fits".format(targetSN)
-    if os.path.exists(output) and not redo:
-        return
+    outdir = os.path.join(os.getcwd(), "spec1d")
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
     data = fits.getdata(cubename, 1)
     h = fits.getheader(cubename, 1)
-    #########################################################################
-    # Adapt header
-    h["NAXIS"] = 2
-    kws = ["CRVAL1", "CD1_1", "CRPIX1", 'CUNIT1', "CTYPE1"]
-    h['CUNIT1'] = h['CUNIT3']
+    ############################################################################
+    # Preparing header for output
+    hnew = fits.Header()
+    hnew["NAXIS"] = 1
+    kws = ["CRVAL1", "CD1_1", "CRPIX1", 'CUNIT1', "CTYPE1", "NAXIS1",
+           "SIMPLE", "BITPIX", "EXTEND"]
     for kw in kws:
         if kw in h.keys():
-            h[kw] = h[kw.replace("1", "3")]
-            del h[kw.replace("1", "3")]
-    del h["NAXIS3"]
-    h["CRVAL2"] = 1
-    h["CD2_2"] = 1
-    h["CRPIX2"] = 1
-    h["CTYPE2"] = "BIN NUMBER"
+            hnew[kw] = h[kw.replace("1", "3")]
     ##########################################################################
     zdim, ydim, xdim = data.shape
     h["NAXIS1"] = zdim
     vordata = fits.getdata(voronoi2D)
     vordata = np.ma.array(vordata, mask=np.isnan(vordata))
     bins = np.unique(vordata)[:-1]
-    h["NAXIS2"] = bins.size
-    combined = np.zeros((bins.size,zdim))
     for j, bin in enumerate(bins):
         idx, idy = np.where(vordata == bin)
         print("Bin {0} / {1} (ncombine={2})".format(j + 1, bins.size, len(idx)))
+        output = os.path.join(outdir, "{}_sn{}_{:04d}.fits".format(field,
+                              targetSN, int(bin)))
+        if os.path.exists(output) and not redo:
+            continue
         specs = data[:,idx,idy]
-        combined[j,:] = np.nanmean(specs, axis=1)
-    print("Writing to disk...")
-    hdu = fits.PrimaryHDU(combined, h)
-    hdulist = fits.HDUList([hdu])
-    hdulist.writeto(output, overwrite=True)
-    print("Done!")
-    return output
+        combined = np.nanmean(specs, axis=1)
+        hdu = fits.PrimaryHDU(combined, hnew)
+        hdulist = fits.HDUList([hdu])
+        hdulist.writeto(output, overwrite=True)
+    return
 
-def run(fields, targetSN=70, dataset="MUSE"):
+def make_bin_table(field):
+    """ Include keywords in the header preparing to use molecfit. """
+    indir = os.path.join(os.getcwd(), "spec1d")
+    outdir = os.path.join(os.getcwd(), "spectab")
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    for f in os.listdir(indir):
+        filename = os.path.join(indir, f)
+        spec = read_fits.read_fits_spectrum1d(filename)
+        table = Table([spec.wavelength, spec.flux],
+                      names=["wlen", "flux"])
+        table.write(os.path.join(outdir, f), format="fits", overwrite=True)
+
+def run(fields, targetSN=70, dataset="MUSE-DEEP"):
     for field in fields:
         print(field)
         os.chdir(os.path.join(context.data_dir, dataset, field))
@@ -262,12 +270,9 @@ def run(fields, targetSN=70, dataset="MUSE"):
         bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
         voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=False)
         geom = calc_geom(voronoi2D, imgname)
-        print(np.array(geom["BIN"]))
-        plt.plot(np.array(geom["BIN"]).astype(float), np.array(geom["R"]).astype(float), "o")
-        plt.show()
-        # voronoi2D = sort_voronoi2D(voronoi2D, imgname)
-        # combined = combine_spectra(cubename, voronoi2D, targetSN, redo=False)
-
+        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
+        combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
+        # make_bin_table(field)
 
 if __name__ == '__main__':
     fields = context.fields
