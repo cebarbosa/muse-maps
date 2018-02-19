@@ -10,16 +10,19 @@ import os
 import pickle
 
 import numpy as np
-import pyfits as pf
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from scipy.integrate import simps
 from astropy.stats import sigma_clip
+from astropy.io import fits
+from astropy import constants
+from specutils.io.read_fits import read_fits_spectrum1d
 
 from ppxf.ppxf import ppxf, reddening_curve
 import ppxf.ppxf_util as util
 
 import context
+from misc import array_from_header, snr
 
 
 class pPXF():
@@ -162,22 +165,25 @@ def ppsave(pp, outroot="logs/out"):
     hdus = []
     for i,att in enumerate(arrays):
         if i == 0:
-            hdus.append(pf.PrimaryHDU(getattr(pp, att)))
+            hdus.append(fits.PrimaryHDU(getattr(pp, att)))
         else:
-            hdus.append(pf.ImageHDU(getattr(pp, att)))
+            hdus.append(fits.ImageHDU(getattr(pp, att)))
         delattr(pp, att)
-    hdulist = pf.HDUList(hdus)
-    hdulist.writeto(outroot + ".fits", clobber=True)
-    with open(outroot + ".pkl", "w") as f:
+    hdulist = fits.HDUList(hdus)
+    hdulist.writeto(os.path.join(outroot, "{}.fits".format(pp.name)),
+                    overwrite=True)
+    with open(os.path.join(outroot, "{}.pkl".format(pp.name)) , "w") as f:
         pickle.dump(pp, f)
+    return
 
-def ppload(inroot="logs/out"):
+def ppload(pp, path):
     """ Read ppxf arrays. """
-    with open(inroot + ".pkl") as f:
+    with open(os.path.join(path, "{}.pkl".format(pp.name))) as f:
         pp = pickle.load(f)
     arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
     for i, item in enumerate(arrays):
-        setattr(pp, item, pf.getdata(inroot + ".fits", i))
+        setattr(pp, item, fits.getdata(os.path.join(path, "{}.fits".format(
+            pp.name)), i))
     return pp
 
 def plot_all():
@@ -196,18 +202,21 @@ def plot_all():
             pp = pPXF(pp, velscale)
             pp.plot("logs/{0}".format(spec.replace(".fits", ".png")))
 
-def run_ppxf(fields, w1, w2, targetSN, tempfile, logdir, redo=False,
-             ncomp=2, only_halo=False, bins=None, **kwargs):
+def run_ppxf(fields, w1, w2, targetSN, tempfile,
+             velscale=None, redo=False, ncomp=2, only_halo=False, bins=None,
+             dataset=None, **kwargs):
     """ New function to run pPXF. """
-    global velscale
-    window=50
-    stars = pf.getdata(tempfile, 0)
-    emission = pf.getdata(tempfile, 1)
-    # absorption = -pf.getdata(tempfile, 2)
-    logLam_temp = wavelength_array(tempfile, axis=1, extension=0)
+    if velscale is None:
+        velscale = context.velscale
+    if dataset is None:
+        dataset = "MUSE-DEEP"
+    logwave_temp = array_from_header(tempfile, axis=1, extension=0)
+    wave_temp = np.exp(logwave_temp)
+    stars = fits.getdata(tempfile, 0)
+    emission = fits.getdata(tempfile, 1)
+    params = fits.getdata(tempfile, 2)
     ngas = len(emission)
     nstars = len(stars)
-    # nabs = len(absorption)
     ##########################################################################
     # Set components
     if ncomp == 1:
@@ -218,63 +227,53 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, logdir, redo=False,
         templates = np.column_stack((stars.T, emission.T))
         components = np.hstack((np.zeros(nstars), np.ones(ngas))).astype(int)
         kwargs["component"] = components
-    elif ncomp == 3:
-        templates = np.column_stack((stars.T, emission.T, absorption.T))
-        components = np.hstack((np.zeros(nstars), np.ones(ngas),
-                                2 * np.ones(nabs))).astype(int)
-        kwargs["component"] = components
     ##########################################################################
-    for f in fields:
-        print "Working on Field {0}".format(f[-1])
-        os.chdir(os.path.join(data_dir, "combined_{0}".format(f)))
-        outdir = os.path.join(os.getcwd(), logdir)
-        if not os.path.exists(outdir):
-            os.mkdir(outdir)
-        fits = "binned_sn{0}_res2.95.fits".format(targetSN)
-        data = pf.getdata(fits, 0)
-        w = wavelength_array(fits, axis=1, extension=0)
-        if bins is None:
-            bins = wavelength_array(fits, axis=2, extension=0)
+    for field in fields:
+        print "Working on Field {0}".format(field[-1])
+        os.chdir(os.path.join(context.data_dir, dataset, field, "spec1d"))
+        logdir = os.path.join(context.data_dir, dataset, field,
+                              "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
+                               w1, w2, targetSN))
+        if not os.path.exists(logdir):
+            os.mkdir(logdir)
+        filenames = sorted(os.listdir("."))
         ######################################################################
-        # Slice array before fitting
-        idx = np.where(np.logical_and(w >= w1, w <= w2))[0]
-        data = data[:,idx]
-        w = w[idx]
-        halobins = halo_bins(f)
-        ######################################################################
-        for i,bin in enumerate(bins):
-            output = os.path.join(outdir, "{1}_bin{2:04d}.pkl".format(targetSN,
-                                                                      f, bin))
-            outroot = output.replace(".pkl", "")
-            if os.path.exists(output) and not redo:
+        for i, fname in enumerate(filenames):
+            name = fname.replace(".fits", "")
+            if os.path.exists(os.path.join(logdir, fname)) and not redo:
                 continue
-            if bin not in halobins and only_halo:
-                continue
-            print "=" * 80 + "\n"
-            print "PPXF run {0}/{1}\n".format(i+1, len(bins))
-            print "=" * 80
-            spec = data[i,:]
-            signal, noise, sn = snr(spec)
-            galaxy, logLam, vtemp = util.log_rebin([w[0], w[-1]],             \
-                                                      spec, velscale=velscale)
-            dv = (logLam_temp[0]-logLam[0])*c
-            lam = np.exp(logLam)
-            name = "{0}_bin{1:04d}".format(f, bin)
+            print("=" * 80)
+            print("PPXF run {0}/{1}".format(i+1, len(filenames)))
+            print("=" * 80)
+            spec = read_fits_spectrum1d(fname)
+            ###################################################################
+            # Trim spectrum according to templates
+            idx = np.argwhere(np.logical_and(
+                              spec.wavelength.value > wave_temp[0],
+                              spec.wavelength.value < wave_temp[-1]))
+            wave = spec.wavelength[idx].T[0].value
+            flux = spec.flux[idx].T[0].value
+            ###################################################################
+            signal, noise, sn = snr(flux)
+            galaxy, logLam, vtemp = util.log_rebin([wave[0], wave[-1]],
+                                                   flux, velscale=velscale)
+            dv = (logwave_temp[0]-logLam[0]) * constants.c.to("km/s").value
             noise =  np.ones_like(galaxy) * noise
-            kwargs["lam"] = lam
+            kwargs["lam"] = wave
             ###################################################################
             # Masking bad pixels
             skylines = np.array([4785, 5577,5889, 6300, 6863])
-            goodpixels = np.arange(len(lam))
+            goodpixels = np.arange(len(wave))
             for line in skylines:
-                sky = np.argwhere((lam < line - 15) | (lam > line + 15)).ravel()
+                sky = np.argwhere((wave < line - 15) | (wave > line +
+                                                        15)).ravel()
                 goodpixels = np.intersect1d(goodpixels, sky)
             kwargs["goodpixels"] = goodpixels
             ###################################################################
             kwargs["vsyst"] = dv
             # First fitting
             pp = ppxf(templates, galaxy, noise, velscale, **kwargs)
-            title = "Field {0} Bin {1}".format(f[-1], bin)
+            title = "Field {0} Bin {1}".format(field[-1], bin)
             pp.name = name
             # Adding other things to the pp object
             pp.has_emission = True
@@ -284,35 +283,9 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, logdir, redo=False,
             pp.ngas = ngas
             pp.ntemplates = nstars
             pp.templates = 0
-            pp.id = id
             pp.name = name
             pp.title = title
-            ppsave(pp, outroot=outroot)
-            ###################################################################
-            # Second run using realistic noise that varies with wavelenght
-            # pp0 = ppload(outroot)
-            # pp0 = pPXF(pp0, velscale)
-            # pp0.calc_sn()
-            # res = (pp0.galaxy - pp0.bestfit)
-            # noise = rolling_std(res, window, center=True)
-            # noise[:window / 2] = noise[window + 1]
-            # noise[-window / 2 + 1:] = noise[-window / 2]
-            # pp = ppxf(templates, galaxy, noise, velscale, **kwargs)
-            # pp.name = name
-            # pp.has_emission = True
-            # pp.dv = dv
-            # pp.w = np.exp(logLam)
-            # pp.velscale = velscale
-            # pp.ngas = ngas
-            # pp.ntemplates = nstars
-            # pp.templates = 0
-            # pp.id = id
-            # pp.name = name
-            # pp.title = title
-            # ppsave(pp, outroot=outroot)
-            ppf = ppload(outroot)
-            ppf = pPXF(ppf, velscale)
-            ppf.plot("{1}/{0}.png".format(name, outdir))
+            ppsave(pp, outroot=logdir)
     return
 
 
@@ -353,21 +326,28 @@ def make_table(fields, logdir):
             f.write(head)
             f.write("".join(results))
 
-def run_stellar_populations(fields, targetSN, w1, w2, redo=False):
-    """ Run pPXF for stellar populations"""
-    tempfile = os.path.join(home, \
-               "MILES10.0/templates/templates_w{0}_{1}_res2.95.fits".format(w1,
-                                                                        w2))
-    logdir = "logs_sn{0}_w{1}_{2}".format(targetSN, w1, w2)
-    if not os.path.exists(logdir):
-        os.mkdir(logdir)
+def run_stellar_populations(fields, targetSN, w1, w2,
+                            sampling=None, velscale=None, redo=False,
+                            dataset=None):
+    """ Run pPXF on binned data using stellar population templates"""
+    if sampling is None:
+        sampling = "salpeter_regular"
+    if velscale is None:
+        velscale = context.velscale
+    if dataset is None:
+        dataset = "MUSE-DEEP"
+    tempfile = os.path.join(context.home, "templates",
+               "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
+                                                    sampling))
+    logdir = "ppxf_sn{0}_w{1}_{2}".format(targetSN, w1, w2)
     bounds = np.array([[[1800., 5800.], [3., 800.], [-0.3, 0.3], [-0.3, 0.3]],
                        [[1800., 5800.], [3., 80.], [-0.3, 0.3], [-0.3, 0.3]]])
     kwargs = {"start" :  np.array([[3800, 50, 0., 0.], [3800, 50., 0, 0]]),
               "plot" : False, "moments" : [4, 4], "degree" : 12,
               "mdegree" : 0, "reddening" : None, "clean" : False,
               "bounds" : bounds}
-    run_ppxf(fields, w1, w2, targetSN, tempfile, logdir, redo=redo,
+
+    run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo,
              ncomp=2, **kwargs)
     make_table(fields, logdir)
     # linenames= ["HBeta_4861.3", "[OIII]_4958.9", "[OIII]_5006.8",
@@ -432,7 +412,7 @@ def make_table_emission(fields, targetSN, logdir, w1=4500, w2=5500, ncomp=1,
 if __name__ == '__main__':
     targetSN = 70
     w1 = 4500
-    w2 = 5900
+    w2 = 5500
     ##########################################################################
     # Running stellar populations
-    run_stellar_populations(fields[:1], targetSN, w1, w2, redo = True)
+    run_stellar_populations(context.fields, targetSN, w1, w2, redo = True)
