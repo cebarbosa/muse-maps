@@ -24,6 +24,11 @@ velscale = 30. # Set velocity scale for pPXF related routines
 ra0 = 159.178471651
 dec0 = -27.5281283035
 
+# VHELIO - radial velocities of the fields, have to be added from the
+# observed velocities.
+vhelio = {"fieldA" : 24.77, "fieldB" : 21.26, "fieldC" : 20.80,
+          "fieldD" : 19.09} # km / s
+
 def get_field_files(field, dataset="MUSE-DEEP"):
     """ Returns the names of the image and cube associated with a given
     field. """

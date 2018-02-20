@@ -13,6 +13,7 @@ from __future__ import print_function, division
 import os
 
 import numpy as np
+import astropy.units as u
 from astropy.io import fits
 from astropy.table import Table
 
@@ -54,15 +55,19 @@ def calc_geom(binfile, imgfile):
         ycen[i] = np.mean(yy[idx])
     radius = np.sqrt(xcen**2 + ycen**2)
     pa = np.rad2deg(np.arctan2(xcen, ycen))
-    # Converting to strings
-    xcen = ["{0:.5f}".format(x) for x in xcen]
-    ycen = ["{0:.5f}".format(x) for x in ycen]
-    radius = ["{0:.5f}".format(x) for x in radius]
-    pa = ["{0:.5f}".format(x) for x in pa]
-    specs = np.array(["{0:04d}".format(x) for x in bins])
-    table = Table(data=[specs, xcen, ycen, radius, pa], names=["BIN", "X",
-                                                               "Y", "R", "PA"])
+    specs = np.array(["{0:04d}".format(_) for _ in bins])
+    table = Table(data=[specs, xcen * u.kpc, ycen * u.kpc, radius * u.kpc,
+                        pa * u.degree], names=["BIN", "X", "Y", "R", "PA"])
     return table
+
+def get_geom(field, targetSN, dataset="MUSE-DEEP"):
+    """ Obtain table with geometric parameters given only field and bin S/N"""
+    binfile = os.path.join(context.data_dir, dataset, field,
+                           "voronoi2d_sn{}.fits".format(targetSN))
+    imgname, cubename = context.get_field_files(field)
+    table = calc_geom(binfile, imgname)
+    return table
+
 
 def calc_isophotes(x, y, x0, y0, PA, q):
     """ Calculate isophotes for a given component. """

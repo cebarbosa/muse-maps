@@ -12,10 +12,11 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
-from scipy.integrate import simps
+import astropy.units as u
 from astropy.stats import sigma_clip
 from astropy.io import fits
 from astropy import constants
+from astropy.table import Table, vstack, hstack
 from specutils.io.read_fits import read_fits_spectrum1d
 
 from ppxf.ppxf import ppxf, reddening_curve
@@ -23,6 +24,7 @@ import ppxf.ppxf_util as util
 
 import context
 from misc import array_from_header, snr
+from geomfov import get_geom
 
 
 class pPXF():
@@ -37,6 +39,7 @@ class pPXF():
     def calc_arrays(self):
         """ Calculate the different useful arrays."""
         # Slice matrix into components
+        self.compmatrix = np.copy(self.matrix)
         self.m_poly = self.matrix[:,:self.degree + 1]
         self.matrix = self.matrix[:,self.degree + 1:]
         self.m_ssps = self.matrix[:,:self.ntemplates]
@@ -73,8 +76,9 @@ class pPXF():
 
     def calc_sn(self):
         """ Calculates the S/N ratio of a spectra. """
-        self.signal = np.nanmedian(self.galaxy)
-        self.meannoise = np.nanstd(sigma_clip(self.galaxy - self.bestfit,
+        self.signal = np.nanmedian(self.galaxy[self.goodpixels])
+        self.meannoise = np.nanstd(sigma_clip(self.galaxy[self.goodpixels] -
+                                              self.bestfit[self.goodpixels],
                                               sigma=5))
         self.sn = self.signal / self.meannoise
         return
@@ -117,23 +121,21 @@ class pPXF():
         gs = gridspec.GridSpec(2, 1, height_ratios=[2.5,1])
         ax = plt.subplot(gs[0])
         ax.minorticks_on()
-        ax.plot(self.w, self.galaxy - self.bestsky, "-k", lw=2.,
-                label="Data (S/N={0})".format(np.around(self.sn,1)))
-        ax.plot(self.w, self.bestfit - self.bestsky, "-", lw=2., c="r",
+        ax.plot(self.w[self.goodpixels], self.galaxy[self.goodpixels], "-",
+                label="Data (S/N={0:.1f})".format(self.sn))
+        ax.plot(self.w[self.goodpixels], self.bestfit[self.goodpixels], "-",
                 label="SSPs: V={0:.0f} km/s, $\sigma$={1:.0f} km/s".format(
                     sol[0], sol[1]))
         ax.xaxis.set_ticklabels([])
         if self.ncomp == 2:
-            ax.plot(self.w, self.gas, "-b",
-                    lw=1.,
+            ax.plot(self.w[self.goodpixels], self.gas[self.goodpixels], "-",
                     label="Emission: V={0:.0f} km/s, "
                           "$\sigma$={1:.0f} km/s".format(sol2[0],sol2[1]))
-        # if self.sky != None:
-        #     ax.plot(self.w[self.goodpixels], self.bestsky[self.goodpixels], \
-        #             "-", lw=1, c="g", label="Sky")
-        ax.set_xlim(self.w[0], self.w[-1])
-        ax.set_ylim(None, 1.1 * self.bestfit.max())
-        leg = plt.legend(loc=4, prop={"size":10}, title=self.title,
+        ax.set_xlim(self.w[self.goodpixels][0], self.w[self.goodpixels][-1])
+        ax.set_ylim(None, 1.1 * self.bestfit[self.goodpixels].max())
+        leg = plt.legend(loc=3, prop={"size":10}, title="Field {0[0]}, "
+                                                        "Bin {0[2]}".format(
+            self.name[5:].split("_")),
                          frameon=False)
         # leg.get_frame().set_linewidth(0.0)
         plt.axhline(y=0, ls="--", c="k")
@@ -143,15 +145,18 @@ class pPXF():
         ax1.minorticks_on()
         ax1.set_xlim(self.w[0], self.w[-1])
         ax1.plot(self.w[self.goodpixels], (self.galaxy[self.goodpixels] - \
-                 self.bestfit[self.goodpixels]), "-k",
+                 self.bestfit[self.goodpixels]), "-",
                  label="$\chi^2=${0:.2f}".format(self.chi2))
-        ax1.plot(self.w, self.noise, "--g")
-        ax1.plot(self.w, -self.noise, "--g")
+        ax1.plot(self.w[self.goodpixels], self.noise[self.goodpixels], "--k",
+                 lw=0.5)
+        ax1.plot(self.w[self.goodpixels], -self.noise[self.goodpixels], "--k",
+                 lw=0.5)
         leg2 = plt.legend(loc=2, prop={"size":8})
         ax1.axhline(y=0, ls="--", c="k")
-        ax1.set_ylim(-8 * self.meannoise, 8 * self.meannoise)
+        # ax1.set_ylim(-8 * self.meannoise, 8 * self.meannoise)
         ax1.set_xlabel(r"$\lambda$ ($\AA$)", size=12)
         ax1.set_ylabel(r"$\Delta$Flux", size=12)
+        ax1.set_xlim(self.w[self.goodpixels][0], self.w[self.goodpixels][-1])
         gs.update(hspace=0.075, left=0.11, bottom=0.11, top=0.98, right=0.98)
         if output is not None:
             plt.savefig(output, dpi=250)
@@ -176,31 +181,15 @@ def ppsave(pp, outroot="logs/out"):
         pickle.dump(pp, f)
     return
 
-def ppload(pp, path):
+def ppload(name, path):
     """ Read ppxf arrays. """
-    with open(os.path.join(path, "{}.pkl".format(pp.name))) as f:
+    with open(os.path.join(path, "{}.pkl".format(name))) as f:
         pp = pickle.load(f)
     arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
     for i, item in enumerate(arrays):
         setattr(pp, item, fits.getdata(os.path.join(path, "{}.fits".format(
             pp.name)), i))
     return pp
-
-def plot_all():
-    """ Make plot of all fits. """
-    nights = sorted(os.listdir(data_dir))
-    for night in nights:
-        print "Working in run ", night
-        wdir = os.path.join(data_dir, night)
-        os.chdir(wdir)
-        fits = [x for x in os.listdir(".") if x.endswith(".fits")]
-        skies =  [x for x in fits if x.startswith("sky")]
-        specs = sorted([x for x in fits if x not in skies])
-        for i,spec in enumerate(specs):
-            print "Working on spec {0} ({1}/{2})".format(spec, i+1, len(specs))
-            pp = ppload("logs/{0}".format(spec.replace(".fits", "")))
-            pp = pPXF(pp, velscale)
-            pp.plot("logs/{0}".format(spec.replace(".fits", ".png")))
 
 def run_ppxf(fields, w1, w2, targetSN, tempfile,
              velscale=None, redo=False, ncomp=2, only_halo=False, bins=None,
@@ -230,7 +219,8 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
     ##########################################################################
     for field in fields:
         print "Working on Field {0}".format(field[-1])
-        os.chdir(os.path.join(context.data_dir, dataset, field, "spec1d"))
+        os.chdir(os.path.join(context.data_dir, dataset, field,
+                              "spec1d_FWHM2.95"))
         logdir = os.path.join(context.data_dir, dataset, field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
@@ -288,43 +278,77 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
             ppsave(pp, outroot=logdir)
     return
 
-
-def make_table(fields, logdir):
+def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
+               velscale=None, redo=True):
     """ Make table with results. """
-    head = ("{0:<30}{1:<14}{2:<14}{3:<14}{4:<14}{5:<14}{6:<14}{7:<14}"
-             "{8:<14}{9:<14}{10:<14}{11:<14}{12:<14}\n".format("# FILE",
-             "V", "dV", "S", "dS", "h3", "dh3", "h4", "dh4", "chi/DOF",
-             "S/N (/ pixel)", "ADEGREE", "MDEGREE"))
+    if velscale is None:
+        velscale = context.velscale
+    output = os.path.join(context.data_dir, dataset, "tables",
+                          "ppxf_results_vel{}_sn{}_w{}_{}.fits".format(int(
+                              velscale), targetSN, w1, w2))
+    if os.path.exists(output) and not redo:
+        return
+    names, sols, errors, chi2s, sns = [], [], [], [], []
+    adegrees, mdegrees = [], []
+    geoms = []
     for field in fields:
         print "Producing summary for Field {0}".format(field[-1])
-        os.chdir(os.path.join(data_dir, "combined_{0}".format(field),
-                 logdir))
-        output = os.path.join(data_dir, "combined_{0}".format(field),
-                   logdir.replace("logs", "ppxf") + ".txt")
-        fits = sorted([x for x in os.listdir(".") if x.endswith("fits")])
-        results = []
-        for i, fname in enumerate(fits):
-            print " Processing pPXF solution {0} / {1}".format(i+1, len(fits))
-            pp = ppload(fname.replace(".fits", ""))
+        geoms.append(get_geom(field, targetSN))
+        logdir = os.path.join(context.data_dir, dataset, field,
+                              "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
+                               w1, w2, targetSN))
+        os.chdir(logdir)
+        fitsfiles = sorted([x for x in os.listdir(".") if x.endswith("fits")])
+        for i, fname in enumerate(fitsfiles):
+            print " Processing pPXF solution {0} / {1}".format(i+1,
+                                                               len(fitsfiles))
+            pp = ppload(fname.replace(".fits", ""), logdir)
             pp = pPXF(pp, velscale)
             sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
-            sol[0] += vhelio[field]
+            sol[0] += context.vhelio[field]
+            sols.append(sol)
             error = pp.error if pp.ncomp == 1 else pp.error[0]
-            line = np.zeros((sol.size + error.size,))
-            line[0::2] = sol
-            line[1::2] = error
-            line = np.append(line, [pp.chi2, pp.sn])
-            line = ["{0:12.3f}".format(x) for x in line]
-            num = int(fname.replace(".fits", "").split("bin")[1])
-            name = "{0}_bin{1:04d}".format(field, num)
-            line = ["{0:18s}".format(name)] + line + \
-                   ["{0:12}".format(pp.degree), "{0:12}".format(pp.mdegree)]
-            results.append(" ".join(line) + "\n")
-        results = sorted(results)
-        # Append results to outfile
-        with open(output, "w") as f:
-            f.write(head)
-            f.write("".join(results))
+            errors.append(error)
+            chi2s.append(pp.chi2)
+            sns.append(pp.sn)
+            adegrees.append(pp.degree)
+            mdegrees.append(pp.mdegree)
+            names.append(fname.replace(".fits", ""))
+    geoms = vstack(geoms)
+    sols = np.array(sols).T
+    errors = np.array(errors).T
+    kintable = Table(data=[names, sols[0] * u.km / u.s , errors[0] * u.km /
+                           u.s, sols[1] * u.km / u.s, errors[1] * u.km / u.s,
+                           sols[2], errors[2], sols[3], errors[3], chi2s,
+                           sns, adegrees, mdegrees], \
+                     names=["SPEC", "V", "Verr", "SIGMA", "SIGMAerr", "H3",
+                            "H3err", "H4", "H4err", "CHI2", "S/N", "ADEGREE",
+                            "MDEGREE"])
+    results = hstack([kintable, geoms])
+    results.write(output, format="fits", overwrite=True)
+    return
+
+
+def make_plots(fields, targetSN, w1, w2, redo=False, dataset=None,
+               velscale=None):
+    """ Make plot of all fits. """
+    if dataset is None:
+        dataset = "MUSE-DEEP"
+    if velscale is None:
+        velscale = context.velscale
+    for field in fields:
+        logdir = os.path.join(context.data_dir, dataset, field,
+                              "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
+                               w1, w2, targetSN))
+        os.chdir(logdir)
+        fitsfiles = sorted([x for x in os.listdir(".") if x.endswith("fits")])
+        for i, fname in enumerate(fitsfiles):
+            print " Processing pPXF solution {0} / {1}".format(i+1,
+                                                               len(fitsfiles))
+            pp = ppload(fname.replace(".fits", ""), logdir)
+            pp = pPXF(pp, velscale)
+            pp.plot(output=fname.replace(".fits", ".png"))
+            plt.clf()
 
 def run_stellar_populations(fields, targetSN, w1, w2,
                             sampling=None, velscale=None, redo=False,
@@ -339,80 +363,20 @@ def run_stellar_populations(fields, targetSN, w1, w2,
     tempfile = os.path.join(context.home, "templates",
                "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
                                                     sampling))
-    logdir = "ppxf_sn{0}_w{1}_{2}".format(targetSN, w1, w2)
     bounds = np.array([[[1800., 5800.], [3., 800.], [-0.3, 0.3], [-0.3, 0.3]],
                        [[1800., 5800.], [3., 80.], [-0.3, 0.3], [-0.3, 0.3]]])
     kwargs = {"start" :  np.array([[3800, 50, 0., 0.], [3800, 50., 0, 0]]),
               "plot" : False, "moments" : [4, 4], "degree" : 12,
               "mdegree" : 0, "reddening" : None, "clean" : False,
               "bounds" : bounds}
-
-    run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo,
-             ncomp=2, **kwargs)
-    make_table(fields, logdir)
-    # linenames= ["HBeta_4861.3", "[OIII]_4958.9", "[OIII]_5006.8",
-    #             "HAlpha_6564.6", "[NI]_5200.2", "[NII]_6585.2", "[NII]_6549.8",
-    #             "[SII]_6718.2", "[SII]_6732.6"]
-    # make_table_emission(fields, targetSN, logdir, w1=w1, w2=w2, ncomp=1,
-    #                     lines=linenames)
+    run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo, ncomp=2, **kwargs)
+    make_table(fields, w1, w2, targetSN, redo=redo)
+    make_plots(fields, targetSN, w1, w2, redo=redo)
     return
-
-def make_table_emission(fields, targetSN, logdir, w1=4500, w2=5500, ncomp=1,
-                        lines=None):
-    """ Make a table with properties of the emission lines. """
-    ######################################################################
-    # Preparing header
-    head = ["#Spec", "V", "Verr", "Sigma", "Sigerr", "E(B-V)"]
-    snstr = len(lines) * ["A/N"]
-    ls =  [item for pair in zip(lines,snstr) for item in pair]
-    head += ls
-    head = ["{0:15s}".format(x) for x in head]
-    head[0] = "{0:20s}".format(head[0])
-    head = "".join(head) + "\n"
-    lines = np.array([4861.3, 4958.9, 5006.8, 6564.6, 5200.2, 6585.2,
-                      6549.8, 6718.2, 6732.6])
-    kccm89 = k_CCM89(lines)
-    #######################################################################
-    for field in fields:
-        os.chdir(os.path.join(data_dir, "combined_{0}".format(field), logdir))
-        output = os.path.join(data_dir, "combined_{0}".format(field), \
-                "ppxf_emission_sn{0}_w{1}_{2}.txt".format(targetSN, w1, w2))
-        fits = sorted([x for x in os.listdir(".") if x.endswith("fits")])
-        results = []
-        for i, fname in enumerate(fits):
-            print "{2} ({0} / {1})".format(i+1, len(fits), fname)
-            pp = ppload(fname.replace(".fits", ""))
-            pp = pPXF(pp, velscale)
-            line = [pp.sol[ncomp][0], pp.error[ncomp][0], pp.sol[ncomp][1],
-                    pp.error[ncomp][1]]
-            lfluxes = np.zeros_like(lines)
-            ans = np.zeros_like(lines)
-            for j in np.arange(pp.ngas):
-                flux = pp.m_gas[:,j] * pp.w_gas[j]
-                lfluxes[j] = simps(flux, pp.w)
-                ans[j] = flux.max() / pp.noise
-            ebv = 1.97 * np.log10(lfluxes[3] / lfluxes[0] / 2.86)
-            ebv = ebv if np.isfinite(ebv) else 0
-            lfluxes *= np.power(10, 0.4 * kccm89 * ebv)
-            sflux = ["{0:10.5g} {1:10.3g}".format(x,y) for x,y in zip(
-                     lfluxes,ans)]
-            line = ["{0:15.5f}".format(x) for x in line] + \
-                   ["{0:10.2g}".format(ebv)] + sflux
-            num = int(fname.replace(".fits", "").split("bin")[1])
-            name = "{0}_bin{1:04d}".format(field, num)
-            line = ["{0:20s}".format(name)] + line
-            results.append(" ".join(line) + "\n")
-        results = sorted(results)
-        # Write results to outfile
-        with open(output, "w") as f:
-            f.write(head)
-            f.write("".join(results))
-    return
-
 if __name__ == '__main__':
     targetSN = 70
     w1 = 4500
-    w2 = 5500
+    w2 = 5900
     ##########################################################################
     # Running stellar populations
-    run_stellar_populations(context.fields, targetSN, w1, w2, redo = True)
+    run_stellar_populations(context.fields, targetSN, w1, w2, redo=False)
