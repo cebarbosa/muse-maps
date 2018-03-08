@@ -184,7 +184,7 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
 
 if __name__ == "__main__":
     w1 = 4500
-    w2 = 5900
+    w2 = 10000
     velscale = 30 # km / s
     starttime = datetime.now()
     prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter_regular",
