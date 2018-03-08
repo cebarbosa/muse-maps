@@ -29,7 +29,7 @@ from geomfov import get_geom
 
 class pPXF():
     """ Class to read pPXF pkl files """
-    def __init__(self, pp, velscale):
+    def __init__(self, pp):
         self.__dict__ = pp.__dict__.copy()
         self.dw = 1.25 # Angstrom / pixel
         self.calc_arrays()
@@ -39,20 +39,19 @@ class pPXF():
     def calc_arrays(self):
         """ Calculate the different useful arrays."""
         # Slice matrix into components
-        self.compmatrix = np.copy(self.matrix)
-        self.m_poly = self.matrix[:,:self.degree + 1]
-        self.matrix = self.matrix[:,self.degree + 1:]
-        self.m_ssps = self.matrix[:,:self.ntemplates]
-        self.matrix = self.matrix[:,self.ntemplates:]
-        self.m_gas = self.matrix[:,:self.ngas]
-        self.matrix = self.matrix[:,self.ngas:]
-        self.m_sky = self.matrix
-        # Slice weights
+        matrix = np.copy(self.matrix)
+        mpoly = matrix[:,:self.degree + 1]
+        matrix = matrix[:,self.degree + 1:]
+        ssps = matrix[:,:self.ntemplates]
+        matrix = matrix[:,self.ntemplates:]
+        gas = matrix[:,:self.ngas]
+        matrix = matrix[:,self.ngas:]
+        sky = matrix
+        # Making arrays
         if hasattr(self, "polyweights"):
-            self.w_poly = self.polyweights
-            self.poly = self.m_poly.dot(self.w_poly)
+            self.apoly = mpoly.dot(self.polyweights)
         else:
-            self.poly = np.zeros_like(self.galaxy)
+            self.apoly = np.zeros_like(self.galaxy)
         if hasattr(self, "mpolyweights"):
             x = np.linspace(-1, 1, len(self.galaxy))
             self.mpoly = np.polynomial.legendre.legval(x, np.append(1,
@@ -63,15 +62,16 @@ class pPXF():
             self.extinction = reddening_curve(self.lam, self.reddening)
         else:
             self.extinction = np.ones_like(self.galaxy)
-        self.w_ssps = self.weights[:self.ntemplates]
-        self.weights = self.weights[self.ntemplates:]
-        self.w_gas = self.weights[:self.ngas]
-        self.weights = self.weights[self.ngas:]
-        self.w_sky = self.weights
+        weights = np.copy(self.weights)
+        self.star_weights = weights[:self.ntemplates]
+        weights = weights[self.ntemplates:]
+        self.gas_weights = weights[:self.ngas]
+        weights = weights[self.ngas:]
+        self.sky_weights = weights
         # Calculating components
-        self.ssps = self.m_ssps.dot(self.w_ssps)
-        self.gas = self.m_gas.dot(self.w_gas)
-        self.bestsky = self.m_sky.dot(self.w_sky)
+        self.ssps = ssps.dot(self.star_weights)
+        self.gas = gas.dot(self.gas_weights)
+        self.bestsky = sky.dot(self.sky_weights)
         return
 
     def calc_sn(self):
@@ -81,27 +81,6 @@ class pPXF():
                                               self.bestfit[self.goodpixels],
                                               sigma=5))
         self.sn = self.signal / self.meannoise
-        return
-
-    def mc_errors(self, nsim=200):
-        """ Calculate the errors using MC simulations"""
-        errs = np.zeros((nsim, len(self.error)))
-        for i in range(nsim):
-            y = self.bestfit + np.random.normal(0, self.noise,
-                                                len(self.galaxy))
-
-            noise = np.ones_like(self.galaxy) * self.noise
-            sim = ppxf(self.bestfit_unbroad, y, noise, velscale,
-                       [0, self.sol[1]],
-                       goodpixels=self.goodpixels, plot=False, moments=4,
-                       degree=-1, mdegree=-1,
-                       vsyst=self.vsyst, lam=self.lam, quiet=True, bias=0.)
-            errs[i] = sim.sol
-        median = np.ma.median(errs, axis=0)
-        error = 1.4826 * np.ma.median(np.ma.abs(errs - median), axis=0)
-        # Here I am using always the maximum error between the simulated
-        # and the values given by pPXF.
-        self.error = np.maximum(error, self.error)
         return
 
     def plot(self, output=None, fignumber=1):
@@ -157,43 +136,39 @@ class pPXF():
         ax1.set_xlabel(r"$\lambda$ ($\AA$)", size=12)
         ax1.set_ylabel(r"$\Delta$Flux", size=12)
         ax1.set_xlim(self.w[self.goodpixels][0], self.w[self.goodpixels][-1])
-        gs.update(hspace=0.075, left=0.11, bottom=0.11, top=0.98, right=0.98)
+        gs.update(hspace=0.075, left=0.12, bottom=0.11, top=0.98, right=0.98)
         if output is not None:
             plt.savefig(output, dpi=250)
         return
 
-def ppsave(pp, outroot="logs/out"):
-    """ Produces output files for a ppxf object. """
-    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
-    delattr(pp, "star_rfft")
-    delattr(pp, "star")
-    hdus = []
-    for i,att in enumerate(arrays):
-        if i == 0:
-            hdus.append(fits.PrimaryHDU(getattr(pp, att)))
-        else:
-            hdus.append(fits.ImageHDU(getattr(pp, att)))
-        delattr(pp, att)
-    hdulist = fits.HDUList(hdus)
-    hdulist.writeto(os.path.join(outroot, "{}.fits".format(pp.name)),
-                    overwrite=True)
-    with open(os.path.join(outroot, "{}.pkl".format(pp.name)) , "w") as f:
-        pickle.dump(pp, f)
-    return
-
-def ppload(name, path):
-    """ Read ppxf arrays. """
-    with open(os.path.join(path, "{}.pkl".format(name))) as f:
-        pp = pickle.load(f)
-    arrays = ["matrix", "w", "bestfit", "goodpixels", "galaxy", "noise"]
-    for i, item in enumerate(arrays):
-        setattr(pp, item, fits.getdata(os.path.join(path, "{}.fits".format(
-            pp.name)), i))
-    return pp
-
-def run_ppxf(fields, w1, w2, targetSN, tempfile,
-             velscale=None, redo=False, ncomp=2, only_halo=False, bins=None,
-             dataset=None, **kwargs):
+    def save(self, logdir=None):
+        """ Save arrays in a fits table. """
+        if logdir is None:
+            logdir = os.getcwd()
+        self.goodpixels = np.where(np.isin(np.arange(len(self.w)),
+                                           self.goodpixels), 1, 0)
+        rows = ["w", "galaxy", "bestfit", "ssps", "gas", "apoly", "mpoly",
+                "goodpixels", "extinction", "bestsky"]
+        rownames = ["wave", "flux", "bestfit", "ssps", "emission", "apoly",
+                    "mpoly", "goodpixels", "reddening", "sky"]
+        table = Table()
+        for row, rowname in zip(rows, rownames):
+            if hasattr(self, row):
+                x = getattr(self, row)
+                table[rowname] = x
+                delattr(self, row)
+        self.table = table
+        # Remove large arrays which can be reconstructed later if necessary
+        rmkeys = ["matrix", "star_rfft", "lam", "noise", "star"]
+        for key in rmkeys:
+            if hasattr(self, key):
+                delattr(self, key)
+        output = os.path.join(logdir, "{}.pkl".format(self.name))
+        with open(output, "w") as f:
+            pickle.dump(self, f)
+        return
+def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
+             ncomp=2, dataset=None, test=False, **kwargs):
     """ New function to run pPXF. """
     if velscale is None:
         velscale = context.velscale
@@ -202,8 +177,9 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
     logwave_temp = array_from_header(tempfile, axis=1, extension=0)
     wave_temp = np.exp(logwave_temp)
     stars = fits.getdata(tempfile, 0)
+    if test:
+        stars = stars[:5]
     emission = fits.getdata(tempfile, 1)
-    params = fits.getdata(tempfile, 2)
     ngas = len(emission)
     nstars = len(stars)
     ##########################################################################
@@ -230,7 +206,8 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
         ######################################################################
         for i, fname in enumerate(filenames):
             name = fname.replace(".fits", "")
-            if os.path.exists(os.path.join(logdir, fname)) and not redo:
+            output = os.path.join(logdir, "{}.pkl".format(name))
+            if os.path.exists(output) and not redo:
                 continue
             print("=" * 80)
             print("PPXF run {0}/{1}".format(i+1, len(filenames)))
@@ -249,15 +226,19 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
                                                    flux, velscale=velscale)
             dv = (logwave_temp[0]-logLam[0]) * constants.c.to("km/s").value
             noise =  np.ones_like(galaxy) * noise
-            kwargs["lam"] = wave
+            lam = np.exp(logLam)
+            kwargs["lam"] = lam
             ###################################################################
             # Masking bad pixels
             skylines = np.array([4785, 5577,5889, 6300, 6863])
-            goodpixels = np.arange(len(wave))
+            goodpixels = np.arange(len(lam))
             for line in skylines:
-                sky = np.argwhere((wave < line - 15) | (wave > line +
+                skyline = np.argwhere((lam < line - 15) | (lam > line +
                                                         15)).ravel()
-                goodpixels = np.intersect1d(goodpixels, sky)
+                goodpixels = np.intersect1d(goodpixels, skyline)
+
+            nans = np.where(~np.isnan(galaxy))[0]
+            goodpixels = np.intersect1d(goodpixels, nans)
             kwargs["goodpixels"] = goodpixels
             ###################################################################
             kwargs["vsyst"] = dv
@@ -268,14 +249,17 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile,
             # Adding other things to the pp object
             pp.has_emission = True
             pp.dv = dv
-            pp.w = np.exp(logLam)
+            pp.w = lam
             pp.velscale = velscale
             pp.ngas = ngas
             pp.ntemplates = nstars
             pp.templates = 0
             pp.name = name
             pp.title = title
-            ppsave(pp, outroot=logdir)
+            pp = pPXF(pp)
+            pp.plot(output=os.path.join(logdir, "{}.png".format(pp.name)))
+            pp.save(logdir)
+            plt.clf()
     return
 
 def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
@@ -298,12 +282,11 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
         os.chdir(logdir)
-        fitsfiles = sorted([x for x in os.listdir(".") if x.endswith("fits")])
-        for i, fname in enumerate(fitsfiles):
-            print " Processing pPXF solution {0} / {1}".format(i+1,
-                                                               len(fitsfiles))
-            pp = ppload(fname.replace(".fits", ""), logdir)
-            pp = pPXF(pp, velscale)
+        pkls = sorted([x for x in os.listdir(".") if x.endswith("pkl")])
+        for i, fname in enumerate(pkls):
+            print " Processing pPXF solution {0} / {1}".format(i+1, len(pkls))
+            with open(fname) as f:
+                pp = pickle.load(f)
             sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
             sol[0] += context.vhelio[field]
             sols.append(sol)
@@ -313,7 +296,7 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
             sns.append(pp.sn)
             adegrees.append(pp.degree)
             mdegrees.append(pp.mdegree)
-            names.append(fname.replace(".fits", ""))
+            names.append(pp.name)
     geoms = vstack(geoms)
     sols = np.array(sols).T
     errors = np.array(errors).T
@@ -328,27 +311,6 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
     results.write(output, format="fits", overwrite=True)
     return
 
-
-def make_plots(fields, targetSN, w1, w2, redo=False, dataset=None,
-               velscale=None):
-    """ Make plot of all fits. """
-    if dataset is None:
-        dataset = "MUSE-DEEP"
-    if velscale is None:
-        velscale = context.velscale
-    for field in fields:
-        logdir = os.path.join(context.data_dir, dataset, field,
-                              "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
-                               w1, w2, targetSN))
-        os.chdir(logdir)
-        fitsfiles = sorted([x for x in os.listdir(".") if x.endswith("fits")])
-        for i, fname in enumerate(fitsfiles):
-            print " Processing pPXF solution {0} / {1}".format(i+1,
-                                                               len(fitsfiles))
-            pp = ppload(fname.replace(".fits", ""), logdir)
-            pp = pPXF(pp, velscale)
-            pp.plot(output=fname.replace(".fits", ".png"))
-            plt.clf()
 
 def run_stellar_populations(fields, targetSN, w1, w2,
                             sampling=None, velscale=None, redo=False,
@@ -369,14 +331,15 @@ def run_stellar_populations(fields, targetSN, w1, w2,
               "plot" : False, "moments" : [4, 4], "degree" : 12,
               "mdegree" : 0, "reddening" : None, "clean" : False,
               "bounds" : bounds}
-    run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo, ncomp=2, **kwargs)
+    run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo, ncomp=2,
+             **kwargs)
     make_table(fields, w1, w2, targetSN, redo=redo)
-    make_plots(fields, targetSN, w1, w2, redo=redo)
     return
+
 if __name__ == '__main__':
     targetSN = 70
     w1 = 4500
-    w2 = 5900
+    w2 = 10000
     ##########################################################################
     # Running stellar populations
     run_stellar_populations(context.fields, targetSN, w1, w2, redo=False)
