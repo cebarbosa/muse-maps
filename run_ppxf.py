@@ -167,6 +167,7 @@ class pPXF():
         with open(output, "w") as f:
             pickle.dump(self, f)
         return
+
 def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
              ncomp=2, dataset=None, test=False, **kwargs):
     """ New function to run pPXF. """
