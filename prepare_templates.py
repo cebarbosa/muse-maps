@@ -56,7 +56,7 @@ class EMiles_models():
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
             elif sample == "test":
-                self.exponents = np.array([2.3, 2.5])
+                self.exponents = np.array([1.3, 1.5])
                 self.ZH = np.array([0.06, 0.15])
                 self.age = np.array([10., 14.])
                 self.alphaFe = np.array([0., 0.2])
