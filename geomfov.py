@@ -34,6 +34,18 @@ def calc_extent(image, extension=1):
     extent = np.array([X[0], X[-1], Y[0], Y[-1]])
     return extent
 
+
+def offset_extent(extent, field):
+    if field == "fieldB":
+        extent[:2] -= 1.
+        extent[2:] -= 0.15
+    if field == "fieldC":
+        extent[:2] -=1.7
+        extent[2:] -= 0.15
+    if field == "fieldD":
+        extent[:2] -= 1.5
+    return extent
+
 def calc_geom(binfile, imgfile):
     """Calculate the location of bins for a given target S/N and field. """
     binimg = fits.getdata(binfile)

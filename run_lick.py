@@ -15,6 +15,7 @@ import numpy as np
 import astropy.units as u
 from astropy.table import Table
 import matplotlib.pyplot as plt
+from scipy.ndimage.filters import gaussian_filter1d
 
 import context
 from basket.lick.lick import Lick
@@ -23,7 +24,7 @@ import context
 from run_ppxf import pPXF
 
 def run_lick(w1, w2, targetSN, dataset="MUSE-DEEP", redo=False, velscale=None,
-             nsim=200):
+             nsim=200, sigma=None):
     """ Calculates Lick indices and uncertainties based on pPXF fitting. """
     velscale = context.velscale if velscale is None else velscale
     bandsfile = os.path.join(os.path.split(os.path.abspath(__file__))[0],
@@ -32,6 +33,7 @@ def run_lick(w1, w2, targetSN, dataset="MUSE-DEEP", redo=False, velscale=None,
     units_bin = np.loadtxt(bandsfile, usecols=(7,))
     units = np.where(units_bin, u.Unit("mag"), u.Unit("angstrom"))
     names = np.loadtxt(bandsfile, usecols=(8,), dtype=str)
+    sigma_str = "" if sigma is None else "_sigma{}".format(sigma)
     for field in context.fields:
         wdir = os.path.join(context.data_dir, dataset, field)
         data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
@@ -43,7 +45,8 @@ def run_lick(w1, w2, targetSN, dataset="MUSE-DEEP", redo=False, velscale=None,
         for j, pkl in enumerate(pkls):
             print("Working with file {} ({}/{})".format(pkl, j+1, len(pkls)))
             output = os.path.join(outdir, pkl.replace(".pkl", "_nsim{"
-                                                              "}.fits".format(nsim)))
+                                  "}{}.fits".format(nsim, sigma_str)))
+            print(output)
             if os.path.exists(output) and not redo:
                 continue
             with open(os.path.join(data_dir, pkl)) as f:
@@ -52,6 +55,12 @@ def run_lick(w1, w2, targetSN, dataset="MUSE-DEEP", redo=False, velscale=None,
             flux = pp.table["flux"] - pp.table["emission"]
             noise = pp.table["flux"] - pp.table["bestfit"]
             losvd = pp.sol[0]
+            if sigma is not None:
+                if losvd[1] > sigma:
+                    continue
+                sigma_diff = np.sqrt(sigma ** 2 - losvd[1] ** 2) / pp.velscale
+                flux = gaussian_filter1d(flux, sigma_diff, mode="constant",
+                                         cval=0.0)
             losvderr = pp.error[0]
             lick = Lick(wave, flux, bandsz0, vel=losvd[0] * u.km / u.s,
                         units=units)
@@ -86,4 +95,4 @@ if __name__ == "__main__":
     targetSN = 70
     w1 = 4500
     w2 = 10000
-    run_lick(w1, w2, targetSN, nsim=200)
+    run_lick(w1, w2, targetSN, nsim=200, sigma=300, redo=False)

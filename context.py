@@ -48,7 +48,6 @@ def get_field_files(field, dataset="MUSE-DEEP"):
             cube = "ADP.2017-03-27T12:49:43.635.fits"
         return os.path.join(wdir, img), os.path.join(wdir, cube)
     elif dataset=="MUSE":
-        wdir = os.path.join(data_dir, "MUSE-DEEP", field)
         raise(NotImplementedError)
     else:
         raise ValueError("Data set name not defined: {}".format(dataset))
