@@ -62,12 +62,12 @@ class EMiles_models():
                 self.alphaFe = np.array([0., 0.2])
                 self.NaFe = np.array([0., 0.3])
             elif sample == "salpeter_regular":
-                self.exponents = np.array([2.3])
+                self.exponents = np.array([1.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
                                      0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 14)
-                self.alphaFe = np.array([0., 0.2, 0.4])
-                self.NaFe = np.array([0., 0.3, 0.6])
+                self.alphaFe = np.array([0., 0.4])
+                self.NaFe = np.array([0., 0.6])
             return
 
     def get_filename(self, imf, metal, age, alpha, na):
@@ -174,7 +174,9 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
         emission[i] = np.exp(-(wave - lwave) ** 2 / (2 * sigma * sigma))
     hdu1 = fits.PrimaryHDU(ssps)
     hdu2 = fits.ImageHDU(emission)
-    hdu3 = fits.ImageHDU(params)
+    params = Table(params, names=["alpha", "[Z/H]", "age", "[alpha/Fe]",
+                                  "[Na/Fe]"])
+    hdu3 = fits.BinTableHDU(params)
     hdu1.header["CRVAL1"] = logLam[0]
     hdu1.header["CD1_1"] = logLam[1] - logLam[0]
     hdu1.header["CRPIX1"] = 1.
