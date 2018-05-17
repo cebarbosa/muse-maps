@@ -334,7 +334,7 @@ def run_stellar_populations(fields, targetSN, w1, w2,
               "bounds" : bounds}
     run_ppxf(fields, w1, w2, targetSN, tempfile, redo=redo, ncomp=2,
              **kwargs)
-    make_table(fields, w1, w2, targetSN, redo=redo)
+    make_table(fields, w1, w2, targetSN, redo=True)
     return
 
 if __name__ == '__main__':
