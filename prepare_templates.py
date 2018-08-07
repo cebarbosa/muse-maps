@@ -55,7 +55,7 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 27)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
-            elif sample == "test":
+            elif sample == "minimal":
                 self.exponents = np.array([1.3, 1.5])
                 self.ZH = np.array([0.06, 0.15])
                 self.age = np.array([10., 14.])
@@ -68,6 +68,13 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.4])
                 self.NaFe = np.array([0., 0.6])
+            if sample == "test":
+                self.exponents = np.array([1.0, 1.3, 1.5])
+                self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
+                                     0.15,  0.26,  0.4])
+                self.age = np.linspace(1., 14., 14)
+                self.alphaFe = np.array([0., 0.2, 0.4])
+                self.NaFe = np.array([0., 0.3, 0.6])
             return
 
     def get_filename(self, imf, metal, age, alpha, na):
@@ -102,13 +109,14 @@ def trim_templates(emiles, w1=4500, w2=10000, redo=False):
         print("Created file ", newfilename)
     return
 
-def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False):
+def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
+                                  fwhm=None):
     """ Pipeline for the preparation of the templates."""
     output = os.path.join(context.home, "templates",
             "emiles_muse_vel{}_w{}_{}_{}.fits".format(velscale, w1, w2, sample))
     if os.path.exists(output) and not redo:
         return
-    fwhm = 2.95
+    fwhm = 2.95 if fwhm is None else fwhm
     emiles_base = EMiles_models(path=os.path.join(context.home, "models",
                               "EMILES_BASTI_INTERPOLATED"), sample=sample)
     trim_templates(emiles_base, w1=w1, w2=w2, redo=False)
@@ -189,7 +197,7 @@ if __name__ == "__main__":
     w2 = 10000
     velscale = 30 # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter_regular",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="all",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))

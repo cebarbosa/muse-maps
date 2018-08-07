@@ -20,7 +20,6 @@ from astropy.io import fits
 from scipy.ndimage.filters import gaussian_filter1d
 import matplotlib.pyplot as plt
 from astropy.table import Table, hstack
-from scipy.special import legendre
 import pymc3 as pm
 
 from spectres import spectres
@@ -29,28 +28,28 @@ import context
 from run_ppxf import pPXF
 from misc import array_from_header
 
-def prepare_spectra(outw1, outw2, dw, dataset="MUSE-DEEP", redo=False,
+from bsf.bsf.bsf import NPFit
+
+def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
                 velscale=None, sigma=350):
     """ Prepare spectra for CSP modeling """
     velscale = context.velscale if velscale is None else velscale
     targetSN = 70
     w1 = 4500
     w2 = 10000
-    regrid = np.arange(outw1, outw2, dw)
+    w0resamp = np.arange(outw1, outw2, dw)
+    idxnorm = len(w0resamp) // 2
     for field in context.fields:
         wdir = os.path.join(context.data_dir, dataset, field)
         data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
             velscale), w1, w2, targetSN))
         pkls = sorted([_ for _ in os.listdir(data_dir) if _.endswith(".pkl")])
-        outdir = os.path.join(wdir, "spec1d_resamp_w{}_{}_dw{}".format(outw1,
-                              outw2, dw))
-        if not os.path.exists(outdir):
-            os.mkdir(outdir)
         for j, pkl in enumerate(pkls):
             outfile = os.path.join(outdir, pkl.replace(".pkl", ".fits"))
             if os.path.exists(outfile) and not redo:
                 continue
-            # print("Working with file {} ({}/{})".format(pkl, j + 1, len(pkls)))
+            print("Preparing input spectra {} ({}/{})".format(pkl, j + 1,
+                                                          len(pkls)))
             ####################################################################
             # Reading data from pPXF fitting
             with open(os.path.join(data_dir, pkl)) as f:
@@ -70,25 +69,28 @@ def prepare_spectra(outw1, outw2, dw, dataset="MUSE-DEEP", redo=False,
             ####################################################################
             # De-redshift and resample of the spectrum
             w0 = wave / (1 + z)
+            wresamp = (1 + z) * w0resamp
             # Resampling the spectra
-            fregrid = spectres(regrid, w0, flux)
-            table = Table([regrid, fregrid], names=["wave", "flux"])
+            fresamp = spectres(w0resamp, w0, flux)
+            norm = fresamp[idxnorm] * np.ones_like(fresamp)
+            fresamp /= norm
+            table = Table([w0resamp, wresamp, fresamp, norm],
+                          names=["wave", "obswave", "flux", "norm"])
             table.write(outfile, format="fits", overwrite=True)
             ####################################################################
 
-def prepare_templates(outw1, outw2, dw, sigma=350, redo=False, velscale=None,
+def prepare_templates(outw1, outw2, dw, outdir, sigma=350, redo=False,
+                      velscale=None,
                       sample=None):
     """ Resample templates for full spectral fitting. """
     velscale = context.velscale if velscale is None else velscale
-    sample = "salpeter_regular" if sample is None else sample
+    sample = "all" if sample is None else sample
     w1 = 4500
     w2 = 10000
     tempfile = os.path.join(context.home, "templates",
         "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
                                                   sample))
-    output = os.path.join(context.home, "templates",
-             "emiles_sigma_{}_w{}_{}_dw{}_{}.fits".format(sigma, outw1, outw2,
-                                                          dw, sample))
+    output = os.path.join(outdir, "emiles_templates.fits")
     if os.path.exists(output) and not redo:
         templates = fits.getdata(output, 0)
         wave = fits.getdata(output, 1)
@@ -99,15 +101,18 @@ def prepare_templates(outw1, outw2, dw, sigma=350, redo=False, velscale=None,
     ssps = fits.getdata(tempfile, 0)
     params = Table.read(tempfile, hdu=2)
     newwave = np.arange(outw1, outw2, dw)
+    idxnorm = len(newwave) // 2
     templates = np.zeros((len(ssps), len(newwave)))
     norms = np.zeros(len(ssps))
     for i in np.arange(len(ssps)):
+        print("Preparing templates ({}/{})".format(i+1, len(ssps)))
         sigma_pix = sigma / velscale
         flux = gaussian_filter1d(ssps[i], sigma_pix, mode="constant",
                                  cval=0.0)
-        norm = np.median(flux)
-        flux /= norm
-        templates[i] = spectres(newwave, wave, flux)
+        newflux = spectres(newwave, wave, flux)
+        norm = newflux[idxnorm]
+        newflux /= norm
+        templates[i] = newflux
         norms[i] = norm
     norms = Table([norms], names=["norm"])
     params = hstack([params, norms])
@@ -118,33 +123,25 @@ def prepare_templates(outw1, outw2, dw, sigma=350, redo=False, velscale=None,
     hdulist.writeto(output, overwrite=True)
     return newwave, params, templates
 
-def csp_modeling(wave, flux, templates, dbname, redo=False, adegree=10):
-    """ Model a CSP with bayesian model. """
-    if os.path.exists(dbname) and not redo:
-        return
-    x = np.linspace(-1, 1, len(wave))
-    apoly = np.zeros((adegree, len(x)))
-    for i in range(adegree):
-        apoly[i] = legendre(i)(x)
-    with pm.Model() as model:
-        flux0 = pm.Normal("f0", mu=1, sd=5)
-        w = pm.Dirichlet("w", np.ones(len(templates)))
-        wpoly = pm.Normal("wpoly", mu=0, sd=1, shape=adegree)
-        bestfit = pm.Deterministic("bestfit", flux0 * (pm.math.dot(w.T, \
-                  templates) + pm.math.dot(wpoly.T, apoly)))
-        sigma = pm.Exponential("sigma", lam=1)
-        likelihood = pm.Normal('like', mu=bestfit, sd = sigma, observed=flux)
-        # pm.Cauchy("like", alpha=bestfit, beta=sigma, observed=flux)
-    with model:
-        trace = pm.sample(1000, tune=1000)
-    results = {'model': model, "trace": trace}
-    with open(dbname, 'wb') as buff:
-        pickle.dump(results, buff)
-    return
+def select_lick_wave(wave):
+    """ Select the regions of the spectra containing the Lick indices. """
+    bandsfile = os.path.join(os.path.split(os.path.abspath(__file__))[0],
+                                "tables/spindex_CS.dat")
+    bandsz0 = np.loadtxt(bandsfile, usecols=(3, 6))
+    idxs = []
+    for band in bandsz0:
+        idx1 = np.where(wave > band[0])[0]
+        idx2 = np.where(wave < band[1])[0]
+        idxs.append(np.intersect1d(idx1, idx2))
+    idxs = np.unique(np.hstack(idxs))
+    return idxs
 
-def plot(obswave, flux, norm, dbname, outw1, outw2, dw, velscale=None):
+def plot(obswave, flux, norm, dbname, outw1, outw2, dw, velscale=None,
+         sample=None, idxs=None):
     """ Plot results from model. """
     velscale = context.velscale if velscale is None else velscale
+    sample = "salpeter_regular" if sample is None else sample
+    idxs = np.arange(len(obswave)) if idxs is None else idxs
     pkl = dbname.split("/")[-1].replace(".db", ".pkl")
     field, targetSN, n = pkl.split("_")
     ############################################################################
@@ -163,8 +160,9 @@ def plot(obswave, flux, norm, dbname, outw1, outw2, dw, velscale=None):
     pbestfit = spectres(obswave.value, np.array(pwave), np.array(pbestfit))
     ############################################################################
     tempfile= os.path.join(context.home, "templates",
-             "emiles_sigma_350_w{}_{}_dw{}_salpeter_regular.fits".format(outw1,
-                                                                    outw2, dw))
+             "emiles_sigma_350_w{}_{}_dw{}_{}.fits".format(outw1,
+                                                                    outw2,
+                                                           dw, sample))
     templates = fits.getdata(tempfile, 0)
     wave = fits.getdata(tempfile, 1)
     params = Table.read(tempfile, 2)
@@ -178,8 +176,8 @@ def plot(obswave, flux, norm, dbname, outw1, outw2, dw, velscale=None):
     # Plot
     ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
     ax1.minorticks_on()
-    ax1.plot(obswave, norm * flux)
-    ax1.plot(obswave, norm * bestfit)
+    ax1.plot(obswave[idxs], (norm * flux)[idxs], "o-")
+    ax1.plot(obswave[idxs], norm * bestfit, "o-")
     ax1.fill_between(obswave, norm * bf05, norm * bf95, color="C1", alpha=0.5)
     ax1.plot(obswave, pbestfit)
     ax1.set_xlabel("$\lambda$ (\AA)")
@@ -200,61 +198,92 @@ def make_corner_plot(trace, params):
     npars = len(params.colnames[:-1])
     fig = plt.figure(1)
     idxs = np.arange(npars)
-    ij = np.array(np.meshgrid(idxs, idxs)).reshape(-1, 2)
-    for k, (i, j) in enumerate(ij):
-        plt.subplot(npars, npars, k+1)
-        if i > j:
-            continue
-        elif i == j:
+    ij = np.array(np.meshgrid(idxs, idxs)).T.reshape(-1, 2)
+    widths = [0.1, 0.1, 0.8, 0.15, 0.2]
+    for i, j in ij:
+        if i == j:
+            ax = plt.subplot(npars, npars, j + npars * i + 1)
+            ax.minorticks_on()
             values = np.unique(params[parnames[i]])
             w = np.zeros(len(values))
-            for l,val in enumerate(values):
-                idx = np.where(params[parnames[l]] == val)[0]
-                print(values, w)
+            for k,val in enumerate(values):
+                idx = np.where(params[parnames[i]] == val)
                 if not len(idx):
                     continue
-                w[l] = np.sum(weights[idx] / params["norm"][idx])
-            plt.bar(values, w)
-            plt.show()
+                w[k] = np.sum(weights[idx] / params["norm"][idx])
+                # w[k] = np.sum(weights[idx])
+            w /= w.sum()
+            ax.bar(values, w, width=widths[i])
         else:
-            pass
-
-
-
+            ax = plt.subplot(npars, npars, j + npars * i + 1)
+            ax.minorticks_on()
+            v1s = np.unique(params[parnames[i]])
+            v2s = np.unique(params[parnames[j]])
+            w = np.zeros((len(v1s), len(v2s)))
+            for l,v1 in enumerate(v1s):
+                idx1 = np.where(params[parnames[i]] == v1)[0]
+                for m,v2 in enumerate(v2s):
+                    idx2 = np.where(params[parnames[j]] == v2)[0]
+                    idx = np.intersect1d(idx1, idx2)
+                    w[l,m] = np.sum(weights[idx] / params["norm"][idx])
+                    # w[l, m] = np.sum(weights[idx])
+            x, y = np.meshgrid(v1s, v2s)
+            ax.pcolormesh(y.T, x.T, w, cmap="Greys")
+            # ax.contour(y.T, x.T, w, colors="k")
     plt.show()
 
-def run(dataset = "MUSE-DEEP"):
+def run(dataset = "MUSE-DEEP", redo=True, fittest=False):
     # Parameters for the resampling
     outw1 = 4700
     outw2 = 9100
-    dw = 5
-    prepare_spectra(outw1, outw2, dw, redo=False)
-    wave, params, templates = prepare_templates(outw1, outw2, dw, redo=False)
+    dw = 4
+    sample = "all"
+    sigma = 350 # km / s
+    # Setting unique name for particular modeling
+    fitname = "hydraimf_w{}_{}_dw{}_sigma{}_{}_ssps".format(outw1, outw2, dw,
+                                                         sigma, sample,
+                                                            redo=redo)
+    outdir = os.path.join(context.home, "ssp_modeling", fitname)
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    # Setting the directory where the data is going to be saved
+    data_dir = os.path.join(outdir, "data")
+    if not os.path.exists(data_dir):
+        os.mkdir(data_dir)
+    prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma)
+    # Setting templates
+    templates_dir = os.path.join(outdir, "templates")
+    if not os.path.exists(templates_dir):
+        os.mkdir(templates_dir)
+    wave, params, templates = prepare_templates(outw1, outw2, dw,
+                                                templates_dir, redo=redo,
+                                                sample=sample, sigma=sigma)
+    if not fittest:
+        return
+    # Proceed to fit
     templates = np.array(templates, dtype=np.float)
-    for field in context.fields:
-        wdir = os.path.join(context.data_dir, dataset, field,
-                        "spec1d_resamp_w{}_{}_dw{}".format(outw1, outw2, dw))
-        kintable = os.path.join(context.data_dir, dataset, "tables",
-                                "ppxf_results_vel30_sn70_w4500_10000.fits")
-        kindata = Table.read(kintable)
-        outdir = wdir.replace("spec1d", "models")
-        if not os.path.exists(outdir):
-            os.mkdir(outdir)
-        specs = sorted(os.listdir(wdir))
-        for spec in specs:
-            print(spec)
-            idx = np.where(kindata["SPEC"] == spec.split(".")[0])[0]
-            v = kindata["V"][idx]
-            z = v / constants.c.to("km/s")
-            obswave = wave * u.angstrom * (1 + z)
-            dbname = os.path.join(outdir, spec.replace(".fits", ".db"))
-            data = Table.read(os.path.join(wdir, spec))
-            flux = data["flux"]
-            norm = np.nanmedian(flux)
-            flux /= norm
-            csp_modeling(obswave, flux, templates, dbname, redo=False)
-            plot(obswave, flux, norm, dbname, outw1, outw2, dw)
+    results_dir = os.path.join(outdir, "npfit")
+    specs = sorted([_ for _ in os.listdir(data_dir) if _.startswith("field")])
+    for spec in specs:
+        dbname = os.path.join(results_dir, spec.replace(".fits", ".db"))
+        summary = os.path.join(results_dir, spec.replace(".fits", ".txt"))
+        data = Table.read(os.path.join(data_dir, spec))
+        flux = data["flux"]
+        norm = np.nanmedian(flux)
+        obswave = data["obswave"]
+        flux /= norm
+        if not os.path.exists(dbname) or redo:
+            csp = NPFit(obswave, flux, templates, reddening=True)
+            csp.NUTS_sampling(nsamp=1000, sample_kwargs={"tune":1000})
+            data = {'model': csp.model, 'trace': csp.trace}
+            with open(dbname, 'wb') as f:
+                pickle.dump(data, f)
+            df = pm.df_summary(csp.trace)
+            df.to_csv(summary)
+        plot(obswave, flux, norm, dbname, outw1, outw2, dw,
+             sample=sample)
+        raw_input(404)
 
 
 if __name__ == "__main__":
-    run()
+    run(redo=False)

@@ -9,8 +9,12 @@ Project definitions
 
 """
 import os
+import getpass
 
-home = "/home/kadu/Dropbox/hydraimf"
+if getpass.getuser() == "kadu":
+    home = "/home/kadu/Dropbox/hydraimf"
+else:
+    home = "/sto/hydraimf"
 data_dir = os.path.join(home, "data")
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
