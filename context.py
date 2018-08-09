@@ -14,7 +14,7 @@ import getpass
 if getpass.getuser() == "kadu":
     home = "/home/kadu/Dropbox/hydraimf"
 else:
-    home = "/sto/hydraimf"
+    home = "/sto/home/cebarbosa/hydraimf"
 data_dir = os.path.join(home, "data")
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]

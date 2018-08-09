@@ -49,7 +49,7 @@ def fit(idx, redo=False, parametric=False):
     results_dir = os.path.join(home_dir, outfolder)
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
-    dbname = os.path.join(results_dir, filename.replace(".fits", ".db"))
+    dbname = os.path.join(results_dir, filename.replace(".fits", "_db"))
     summary = os.path.join(results_dir, filename.replace(".fits", ".txt"))
     data = Table.read(os.path.join(data_dir, filename))
     flux = data["flux"]
@@ -61,23 +61,15 @@ def fit(idx, redo=False, parametric=False):
         bsf.build_parametric_model()
     else:
         bsf.build_nonparametric_model()
-    bsf.NUTS_sampling()
-
-    # if parametric:
-    #     csp = bsf.PFit(obswave, flux, templates, params)
-    #     pass
-    # else:
-    #     csp = bsf.NPFit(obswave, flux, templates, reddening=True)
-    #     csp.NUTS_sampling(nsamp=5, sample_kwargs={"tune": 5})
-    #     data = {'model': csp.model, 'trace': csp.trace}
-    #     with open(dbname, 'wb') as f:
-    #         pickle.dump(data, f)
-    #     df = pm.df_summary(csp.trace)
-    #     df.to_csv(summary)
-
+    with bsf.model:
+        db = pm.backends.Text(dbname)
+        bsf.trace = pm.sample(5, tune=5, trace=db)
+        # bsf.trace = pm.sample(trace=db)
+    df = pm.stats.summary(bsf.trace)
+    df.to_csv(summary)
 
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
-        sys.argv.append("2")
+        sys.argv.append("0")
     fit(sys.argv[1], parametric=True)
