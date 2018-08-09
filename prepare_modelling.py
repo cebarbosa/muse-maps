@@ -28,7 +28,7 @@ import context
 from run_ppxf import pPXF
 from misc import array_from_header
 
-from bsf.bsf.bsf import NPFit
+from bsf.bsf.bsf import BSF
 
 def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
                 velscale=None, sigma=350):
@@ -258,8 +258,8 @@ def run(dataset = "MUSE-DEEP", redo=True, fittest=False):
     wave, params, templates = prepare_templates(outw1, outw2, dw,
                                                 templates_dir, redo=redo,
                                                 sample=sample, sigma=sigma)
-    if not fittest:
-        return
+    params = Table(params)
+    norm = params["norm"]
     # Proceed to fit
     templates = np.array(templates, dtype=np.float)
     results_dir = os.path.join(outdir, "npfit")
@@ -273,7 +273,7 @@ def run(dataset = "MUSE-DEEP", redo=True, fittest=False):
         obswave = data["obswave"]
         flux /= norm
         if not os.path.exists(dbname) or redo:
-            csp = NPFit(obswave, flux, templates, reddening=True)
+            csp = BSF(obswave, flux, templates, reddening=True)
             csp.NUTS_sampling(nsamp=1000, sample_kwargs={"tune":1000})
             data = {'model': csp.model, 'trace': csp.trace}
             with open(dbname, 'wb') as f:

@@ -75,6 +75,7 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
+
             return
 
     def get_filename(self, imf, metal, age, alpha, na):
