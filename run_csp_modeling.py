@@ -22,11 +22,10 @@ import pymc3 as pm
 import context
 from bsf.bsf.bsf import BSF
 
-def fit(idx, redo=False, parametric=False):
+def fit(idx, redo=False, statmodel="nssps"):
     """ Perform the fitting in one of the spectra. """
-    outfolder = "pfit" if parametric else "npfit"
     home_dir = os.path.join(context.home, "ssp_modeling",
-                            "hydraimf_w4700_9100_dw10_sigma350_test_ssps")
+                            "hydraimf_w4700_9100_dw10_sigma350_all_ssps")
     # Reading spectrum
     data_dir = os.path.join(home_dir, "data")
     filenames = sorted(os.listdir(data_dir))
@@ -46,7 +45,7 @@ def fit(idx, redo=False, parametric=False):
     params.rename_column("[Na/Fe]", "Na")
     params["logT"] = np.log10(params["logT"])
     # Performing fitting
-    results_dir = os.path.join(home_dir, outfolder)
+    results_dir = os.path.join(home_dir, statmodel)
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
     dbname = os.path.join(results_dir, filename.replace(".fits", "_db"))
@@ -54,22 +53,19 @@ def fit(idx, redo=False, parametric=False):
     data = Table.read(os.path.join(data_dir, filename))
     flux = data["flux"]
     obswave = data["obswave"]
-    if os.path.exists(dbname) and not redo:
-        return
-    bsf = BSF(obswave, flux, templates, params=params)
-    if parametric:
-        bsf.build_parametric_model()
-    else:
-        bsf.build_nonparametric_model()
+    bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel)
+    if not os.path.exists(dbname) or redo:
+        with bsf.model:
+            db = pm.backends.Text(dbname)
+            bsf.trace = pm.sample(njobs=4, nchains=4, trace=db)
+            df = pm.stats.summary(bsf.trace)
+            df.to_csv(summary)
     with bsf.model:
-        db = pm.backends.Text(dbname)
-        bsf.trace = pm.sample(5, tune=5, trace=db)
-        # bsf.trace = pm.sample(trace=db)
-    df = pm.stats.summary(bsf.trace)
-    df.to_csv(summary)
+        bsf.trace = pm.backends.text.load(dbname)
+    bsf.plot()
 
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
-        sys.argv.append("0")
-    fit(sys.argv[1], parametric=True)
+        sys.argv.append("10")
+    fit(sys.argv[1], redo=False, statmodel="nssps")

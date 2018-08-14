@@ -282,7 +282,6 @@ def run(dataset = "MUSE-DEEP", redo=True, fittest=False):
             df.to_csv(summary)
         plot(obswave, flux, norm, dbname, outw1, outw2, dw,
              sample=sample)
-        raw_input(404)
 
 
 if __name__ == "__main__":

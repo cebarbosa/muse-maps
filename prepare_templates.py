@@ -35,7 +35,7 @@ class EMiles_models():
         else:
             self.path = path
         self.sample = "all" if sample is None else sample
-        if self.sample not in ["all", "test", "salpeter_regular"]:
+        if self.sample not in ["all", "test", "salpeter_regular", "minimal"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
         self.values = self.Values(self.sample)
@@ -127,6 +127,7 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     grid = np.array(np.meshgrid(emiles.values.exponents, emiles.values.ZH,
                              emiles.values.age, emiles.values.alphaFe,
                              emiles.values.NaFe)).T.reshape(-1, 5)
+
     filenames = []
     for args in grid:
         filenames.append(os.path.join(emiles.path, emiles.get_filename(*args)))
@@ -198,7 +199,7 @@ if __name__ == "__main__":
     w2 = 10000
     velscale = 30 # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="all",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="minimal",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
