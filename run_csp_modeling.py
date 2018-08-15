@@ -67,5 +67,5 @@ def fit(idx, redo=False, statmodel="nssps"):
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
-        sys.argv.append("10")
+        sys.argv.append("70")
     fit(sys.argv[1], redo=False, statmodel="nssps")
