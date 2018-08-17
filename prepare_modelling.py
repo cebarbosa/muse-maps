@@ -52,7 +52,7 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
                                                           len(pkls)))
             ####################################################################
             # Reading data from pPXF fitting
-            with open(os.path.join(data_dir, pkl)) as f:
+            with open(os.path.join(data_dir, pkl), "rb") as f:
                 pp = pickle.load(f)
             ####################################################################
             # Subtracting emission lines
@@ -232,11 +232,11 @@ def make_corner_plot(trace, params):
             # ax.contour(y.T, x.T, w, colors="k")
     plt.show()
 
-def run(dataset = "MUSE-DEEP", redo=True, fittest=False):
+def run(redo=True):
     # Parameters for the resampling
     outw1 = 4700
     outw2 = 9100
-    dw = 4
+    dw = 2
     sample = "all"
     sigma = 350 # km / s
     # Setting unique name for particular modeling

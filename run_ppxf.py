@@ -195,7 +195,7 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
         kwargs["component"] = components
     ##########################################################################
     for field in fields:
-        print "Working on Field {0}".format(field[-1])
+        print("Working on Field {0}".format(field[-1]))
         os.chdir(os.path.join(context.data_dir, dataset, field,
                               "spec1d_FWHM2.95"))
         logdir = os.path.join(context.data_dir, dataset, field,
@@ -277,7 +277,7 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
     adegrees, mdegrees = [], []
     geoms = []
     for field in fields:
-        print "Producing summary for Field {0}".format(field[-1])
+        print("Producing summary for Field {0}".format(field[-1]))
         geoms.append(get_geom(field, targetSN))
         logdir = os.path.join(context.data_dir, dataset, field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
@@ -285,7 +285,7 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
         os.chdir(logdir)
         pkls = sorted([x for x in os.listdir(".") if x.endswith("pkl")])
         for i, fname in enumerate(pkls):
-            print " Processing pPXF solution {0} / {1}".format(i+1, len(pkls))
+            print(" Processing pPXF solution {0} / {1}".format(i+1, len(pkls)))
             with open(fname) as f:
                 pp = pickle.load(f)
             sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
