@@ -1,14 +1,15 @@
 #!/bin/bash
-#PBS -lwalltime=72:00:00
+#PBS -lwalltime=12:00:00
 ## create 6 array jobs, with $PBS_ARRAYID set for each job
-#PBS -t 1-10
-
+#PBS -t 1-104
+#PBS -l nodes=1:ppn=24
+#PBS -j oe
   
 # ------------------------------------------------------------------------
 # Start of the input; change these as required
 # the start and end array-job id, taken from the -t option in array jobs.
 T_START=1
-T_END=10
+T_END=104
   
 # start and end parameter for all array jobs; these will be used as input
 # to your program
