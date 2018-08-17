@@ -64,12 +64,12 @@ def fit(idx, redo=False, statmodel="nssps"):
             bsf.trace = pm.sample(njobs=4, nchains=4, trace=db)
             df = pm.stats.summary(bsf.trace)
             df.to_csv(summary)
-    # with bsf.model:
-    #     bsf.trace = pm.backends.text.load(dbname)
-    # bsf.plot()
+    with bsf.model:
+        bsf.trace = pm.backends.text.load(dbname)
+    bsf.plot()
 
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
-        sys.argv.append("0")
+        sys.argv.append("10")
     fit(sys.argv[1], redo=False, statmodel="nssps")
