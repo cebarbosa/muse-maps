@@ -276,4 +276,4 @@ def run(fields, targetSN=70, dataset="MUSE-DEEP"):
 
 if __name__ == '__main__':
     fields = context.fields
-    run(fields, targetSN=70, dataset="MUSE-DEEP")
+    run(fields, targetSN=300, dataset="MUSE-DEEP")

@@ -34,7 +34,9 @@ def fit(idx, redo=False, statmodel="nssps"):
     filename = filenames[int(idx)-1]
     results_dir = os.path.join(home_dir, statmodel)
     dbname = os.path.join(results_dir, filename.replace(".fits", "_db"))
-    summary = os.path.join(results_dir, filename.replace(".fits", ".txt"))
+    print(dbname)
+    summary = os.path.join(results_dir, filename.replace(".fits",
+                                                                ".txt"))
     if os.path.exists(dbname) and not redo:
         return
     # Loading templates
@@ -66,10 +68,9 @@ def fit(idx, redo=False, statmodel="nssps"):
             df.to_csv(summary)
     with bsf.model:
         bsf.trace = pm.backends.text.load(dbname)
-    bsf.plot()
 
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
-        sys.argv.append("10")
-    fit(sys.argv[1], redo=False, statmodel="nssps")
+        sys.argv.append("1")
+    fit(sys.argv[1], redo=True, statmodel="nssps")
