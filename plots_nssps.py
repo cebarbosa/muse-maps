@@ -21,11 +21,15 @@ import pymc3 as pm
 import context
 from bsf.bsf.bsf import BSF
 
-def plot_fitting(bsf):
+def plot_fitting(bsf, dbname):
     """ Plot the best fit results in comparison with the data. """
-    w = bsf.trace["w"]
-    wp = bsf.trace["mpoly"]
-    f0 = bsf.trace["f0"]
+    with bsf.model:
+        # wp = np.array([bsf.trace["mpoly_{}".format(i)] for i in range(
+        #                bsf.mdegree + 1)]).T
+        wp = bsf.trace["mpoly"]
+        w = bsf.trace["w"]
+        f0 = bsf.trace["f0"]
+    N = bsf.Nssps
     idxs = []
     for i, p in enumerate(bsf.params.colnames):
         idxs.append(bsf.trace["{}_idx".format(p)])
@@ -33,34 +37,37 @@ def plot_fitting(bsf):
     nchains = idxs.shape[1]
     bestfits = np.zeros((nchains, len(bsf.wave)))
     mpoly = np.zeros_like(bestfits)
+    csps = np.zeros_like(bestfits)
     for i in np.arange(nchains):
         idx = idxs[:, i, :]
         ssps =  bsf.templates[idx[0], idx[1], idx[2], idx[3], idx[4], :]
-        mpoly[i] = f0[i] * np.dot(wp[i], bsf.mpoly)
-        bestfits[i] = np.dot(w[i], ssps) *  mpoly[i]
-    bestfit = np.percentile(bestfits, 50, axis=0)
+        csps[i] = np.dot(w[i].T, ssps)
+        mpoly[i] = np.dot(wp[i].T, bsf.mpoly)
+        bestfits[i] = mpoly[i] *  csps[i]
+    bestfit = np.mean(bestfits, axis=0)
     p95 = np.percentile(bestfits, 95, axis=0)
     p05 = np.percentile(bestfits, 5, axis=0)
     fig, (ax1, ax2) = plt.subplots(2, 1, gridspec_kw = {'height_ratios':[3, 1]})
-    ax1.plot(bsf.wave, bsf.flux, "-")
-    ax1.plot(bsf.wave, bestfit, "-")
-    ax1.plot(bsf.wave, np.percentile(mpoly, 50, axis=0), "-",
-                                     c="C2")
-    ax1.plot(bsf.wave, np.percentile(mpoly, 5, axis=0), "-", c="C2")
-    ax1.plot(bsf.wave, np.percentile(mpoly, 95, axis=0), "-", c="C2")
+    for ax in (ax1, ax2):
+        ax.tick_params(right=True, top=True, axis="both",
+                       direction='in', which="both")
+        ax.minorticks_on()
+    ax1.plot(bsf.wave, bsf.flux, "-", c="C0")
+    ax1.plot(bsf.wave, bestfit, "-", c="C1")
+    # ax1.plot(bsf.wave, np.percentile(mpoly, 50, axis=0), "-",
+    #                                  c="C2")
+    # ax1.plot(bsf.wave, np.percentile(mpoly, 5, axis=0), "-", c="C2")
+    # ax1.plot(bsf.wave, np.percentile(mpoly, 95, axis=0), "-", c="C2")
     ax1.plot(bsf.wave, p95, "-", c="C1")
     ax1.plot(bsf.wave, p05, "-", c="C1")
-    ax1.plot
     ax2.plot(bsf.wave, (bsf.flux - bestfit) / bsf.flux)
-    plt.show()
+    # plt.show()
     return
 
-
-if __name__ == "__main__":
+def run(redo=False):
     # style_list = ['default', 'classic'] + sorted(
     #     style for style in plt.style.available if style != 'classic')
     # print(style_list)
-    redo = False
     home_dir = os.path.join(context.home, "ssp_modeling",
                             "hydraimf_w4700_9100_dw2_sigma350_all_ssps")
     statmodel = "nssps"
@@ -94,29 +101,35 @@ if __name__ == "__main__":
     for filename in filenames:
         print(filename)
         dbname = os.path.join(results_dir, filename.replace(".fits", "_db"))
+        print(dbname)
         if not os.path.exists(dbname):
             continue
         cornerout = os.path.join(corner_dir, "{}.png".format(
-                                 filename.replace(".fits", "")))
+            filename.replace(".fits", "")))
         bestfitout = os.path.join(bestfit_dir, "{}.png".format(
-                                 filename.replace(".fits", "")))
+            filename.replace(".fits", "")))
         data = Table.read(os.path.join(data_dir, filename))
         flux = data["flux"]
         obswave = data["obswave"]
-        bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel)
-
+        bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel,
+                  mdegree=50, reddening=False, Nssps=50)
+        print("Loading trace...")
         with bsf.model:
             bsf.trace = pm.backends.text.load(dbname)
-        with plt.style.context("seaborn-paper"):
-            plt.rcParams["text.usetex"] = True
-            if not os.path.exists(cornerout) or redo:
-                bsf.plot_corner(labels=[r"$\alpha - 1$", "[Z/H]", "Age (Gyr)",
-                                        r"[$\alpha$/Fe]", "[Na/Fe]"])
-                plt.savefig(cornerout, dpi=300)
-                plt.show()
-                plt.close()
-            if not os.path.exists(bestfitout):
-                plot_fitting(bsf)
-                plt.savefig(cornerout, dpi=300)
-                plt.show()
-            plt.clf()
+        plt.style.context("seaborn-paper")
+        plt.rcParams["text.usetex"] = True
+        if not os.path.exists(cornerout) or redo:
+            print("Producing corner figure...")
+            bsf.plot_corner(labels=[r"$\alpha - 1$", "[Z/H]", "Age (Gyr)",
+                                    r"[$\alpha$/Fe]", "[Na/Fe]"])
+            plt.savefig(cornerout, dpi=300)
+            # plt.show()
+            plt.close()
+        print("Ploting bestfit estimate...")
+        plot_fitting(bsf, dbname)
+        plt.savefig(bestfitout, dpi=300)
+        plt.show()
+        plt.clf()
+
+if __name__ == "__main__":
+    run()

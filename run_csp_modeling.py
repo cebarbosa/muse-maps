@@ -12,7 +12,6 @@ from __future__ import print_function, division, absolute_import
 
 import os
 import sys
-import pickle
 
 import numpy as np
 from astropy.io import fits
@@ -59,11 +58,13 @@ def fit(idx, redo=False, statmodel="nssps"):
     data = Table.read(os.path.join(data_dir, filename))
     flux = data["flux"]
     obswave = data["obswave"]
-    bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel)
+    bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel,
+              reddening=False, mdegree=50, Nssps=50)
     if not os.path.exists(dbname) or redo:
         with bsf.model:
             db = pm.backends.Text(dbname)
             bsf.trace = pm.sample(njobs=4, nchains=4, trace=db)
+            # bsf.trace = pm.sample(50, tune=10, njobs=4, nchains=4, trace=db)
             df = pm.stats.summary(bsf.trace)
             df.to_csv(summary)
     with bsf.model:
