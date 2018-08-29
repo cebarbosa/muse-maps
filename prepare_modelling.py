@@ -31,10 +31,10 @@ from misc import array_from_header
 from bsf.bsf.bsf import BSF
 
 def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
-                velscale=None, sigma=350):
+                velscale=None, sigma=350, targetSN=150):
     """ Prepare spectra for CSP modeling """
     velscale = context.velscale if velscale is None else velscale
-    targetSN = 70
+
     w1 = 4500
     w2 = 10000
     w0resamp = np.arange(outw1, outw2, dw)
@@ -43,9 +43,12 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
         wdir = os.path.join(context.data_dir, dataset, field)
         data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
             velscale), w1, w2, targetSN))
+        if not os.path.exists(data_dir):
+            continue
         pkls = sorted([_ for _ in os.listdir(data_dir) if _.endswith(".pkl")])
         for j, pkl in enumerate(pkls):
-            outfile = os.path.join(outdir, pkl.replace(".pkl", ".fits"))
+            outfile = os.path.join(outdir,
+                              pkl.replace(".pkl", ".fits")).replace("_TAC", "")
             if os.path.exists(outfile) and not redo:
                 continue
             print("Preparing input spectra {} ({}/{})".format(pkl, j + 1,
@@ -58,6 +61,7 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             # Subtracting emission lines
             wave = pp.table["wave"]
             flux = pp.table["flux"] - pp.table["emission"]
+            fluxerr = pp.table["noise"]
             # Convolve spectrum to given sigma
             losvd = pp.sol[0]
             z = losvd[0] * u.km / u.s / constants.c
@@ -66,16 +70,23 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             sigma_diff = np.sqrt(sigma ** 2 - losvd[1] ** 2) / pp.velscale
             flux = gaussian_filter1d(flux, sigma_diff, mode="constant",
                                      cval=0.0)
+            errdiag = np.diag(fluxerr)
+            for j in range(len(wave)):
+                errdiag[j] = gaussian_filter1d(errdiag[j] ** 2, sigma_diff,
+                                               mode="constant", cval=0.0)
+            newfluxerr = np.sqrt(errdiag.sum(axis=0))
             ####################################################################
             # De-redshift and resample of the spectrum
             w0 = wave / (1 + z)
             wresamp = (1 + z) * w0resamp
             # Resampling the spectra
             fresamp = spectres(w0resamp, w0, flux)
+            fresamperr = spectres(w0resamp, w0, fluxerr)
             norm = fresamp[idxnorm] * np.ones_like(fresamp)
             fresamp /= norm
-            table = Table([w0resamp, wresamp, fresamp, norm],
-                          names=["wave", "obswave", "flux", "norm"])
+            fresamperr /= norm
+            table = Table([w0resamp, wresamp, fresamp, fresamperr, norm],
+                          names=["wave", "obswave", "flux", "fluxerr", "norm"])
             table.write(outfile, format="fits", overwrite=True)
             ####################################################################
 
@@ -239,10 +250,10 @@ def run(redo=True):
     dw = 2
     sample = "all"
     sigma = 350 # km / s
+    targetSN = 150
     # Setting unique name for particular modeling
-    fitname = "hydraimf_w{}_{}_dw{}_sigma{}_{}_ssps".format(outw1, outw2, dw,
-                                                         sigma, sample,
-                                                            redo=redo)
+    fitname = "fit_w{}_{}_dw{}_sigma{}_sn{}".format(outw1, outw2, dw, sigma,
+                                                    targetSN)
     outdir = os.path.join(context.home, "ssp_modeling", fitname)
     if not os.path.exists(outdir):
         os.mkdir(outdir)
@@ -250,7 +261,8 @@ def run(redo=True):
     data_dir = os.path.join(outdir, "data")
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
-    prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma)
+    prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
+                    targetSN=targetSN)
     # Setting templates
     templates_dir = os.path.join(outdir, "templates")
     if not os.path.exists(templates_dir):
@@ -261,27 +273,27 @@ def run(redo=True):
     params = Table(params)
     norm = params["norm"]
     # Proceed to fit
-    templates = np.array(templates, dtype=np.float)
-    results_dir = os.path.join(outdir, "npfit")
-    specs = sorted([_ for _ in os.listdir(data_dir) if _.startswith("field")])
-    for spec in specs:
-        dbname = os.path.join(results_dir, spec.replace(".fits", ".db"))
-        summary = os.path.join(results_dir, spec.replace(".fits", ".txt"))
-        data = Table.read(os.path.join(data_dir, spec))
-        flux = data["flux"]
-        norm = np.nanmedian(flux)
-        obswave = data["obswave"]
-        flux /= norm
-        if not os.path.exists(dbname) or redo:
-            csp = BSF(obswave, flux, templates, reddening=True)
-            csp.NUTS_sampling(nsamp=1000, sample_kwargs={"tune":1000})
-            data = {'model': csp.model, 'trace': csp.trace}
-            with open(dbname, 'wb') as f:
-                pickle.dump(data, f)
-            df = pm.df_summary(csp.trace)
-            df.to_csv(summary)
-        plot(obswave, flux, norm, dbname, outw1, outw2, dw,
-             sample=sample)
+    # templates = np.array(templates, dtype=np.float)
+    # results_dir = os.path.join(outdir, "npfit")
+    # specs = sorted([_ for _ in os.listdir(data_dir) if _.startswith("field")])
+    # for spec in specs:
+    #     dbname = os.path.join(results_dir, spec.replace(".fits", ".db"))
+    #     summary = os.path.join(results_dir, spec.replace(".fits", ".txt"))
+    #     data = Table.read(os.path.join(data_dir, spec))
+    #     flux = data["flux"]
+    #     norm = np.nanmedian(flux)
+    #     obswave = data["obswave"]
+    #     flux /= norm
+    #     if not os.path.exists(dbname) or redo:
+    #         csp = BSF(obswave, flux, templates, reddening=True)
+    #         csp.NUTS_sampling(nsamp=1000, sample_kwargs={"tune":1000})
+    #         data = {'model': csp.model, 'trace': csp.trace}
+    #         with open(dbname, 'wb') as f:
+    #             pickle.dump(data, f)
+    #         df = pm.df_summary(csp.trace)
+    #         df.to_csv(summary)
+    #     plot(obswave, flux, norm, dbname, outw1, outw2, dw,
+    #          sample=sample)
 
 
 if __name__ == "__main__":

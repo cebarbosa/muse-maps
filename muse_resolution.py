@@ -14,6 +14,7 @@ import os
 import numpy as np
 from astropy import units as u
 from astropy.io import fits
+from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter1d
 from specutils.io import read_fits
@@ -35,7 +36,7 @@ def get_muse_fwhm():
     f = interp1d(wave, f1(wave), kind="cubic", bounds_error=False)
     return f
 
-def broad2res(w, specs, obsres, res=2.95):
+def broad2res(w, flux, obsres, res=2.95, fluxerr=None):
     """ Broad resolution of observed spectra to a given resolution.
 
     Input Parameters
@@ -43,7 +44,8 @@ def broad2res(w, specs, obsres, res=2.95):
     w : np.array
         Wavelength array
 
-    specs: One or more spectra to be broadened to the desired resolution.
+    flux: np.array
+        Spectrum to be broadened to the desired resolution.
 
     obsres : float or np.array
         Observed wavelength spectral resolution FWHM.
@@ -51,25 +53,30 @@ def broad2res(w, specs, obsres, res=2.95):
     res: float
         Resolution FWHM  of the spectra after the broadening.
 
+    fluxerr: np.array
+        Spectrum errors whose uncertainties are propagated
+
     Output parameters
     -----------------
     np.array:
         Broadened spectra.
 
     """
-    specs = np.atleast_2d(specs)
     dw = np.diff(w)[0]
     sigma_diff = np.sqrt(res**2 - obsres**2) / 2.3548 / dw
-    broad = np.zeros_like(specs)
-    # print "Processing broadening"
-    for i,spec in enumerate(specs):
-        # print "Spectra {0}/{1}".format(i+1, len(specs))
-        d = np.diag(spec)
-        for j in range(len(w)):
-            d[j] = gaussian_filter1d(d[j], sigma_diff[j], mode="constant",
-                                     cval=0.0)
-        broad[i] = d.sum(axis=0)
-    return broad
+    diag = np.diag(flux)
+    for j in range(len(w)):
+        diag[j] = gaussian_filter1d(diag[j], sigma_diff[j], mode="constant",
+                                 cval=0.0)
+    newflux = diag.sum(axis=0)
+    if fluxerr is None:
+        return newflux
+    errdiag = np.diag(fluxerr)
+    for j in range(len(w)):
+        errdiag[j] = gaussian_filter1d(errdiag[j]**2, sigma_diff[j],
+                                       mode="constant", cval=0.0)
+    newfluxerr = np.sqrt(errdiag.sum(axis=0))
+    return newflux, newfluxerr
 
 def plot_muse_fwhm():
     f = get_muse_fwhm()
@@ -100,29 +107,33 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE-DEEP"):
     """ Performs convolution to homogeneize the resolution. """
     for field in fields:
         print(field)
-        input_dir = os.path.join(context.data_dir, dataset, field, "spec1d")
+        input_dir = os.path.join(context.data_dir, dataset, field,
+                                 "spectab_sn{}".format(targetSN))
         output_dir = os.path.join(context.data_dir, dataset, field,
-                                  "spec1d_FWHM{}".format(res))
+                                  "spectab_FWHM{}_sn{}".format(res, targetSN))
         if not(os.path.exists(output_dir)):
             os.mkdir(output_dir)
-        specs = sorted([_ for _ in os.listdir(input_dir) if "sn{}".format(
-                        targetSN) in _])
+        specs = sorted([_ for _ in os.listdir(input_dir) if _.endswith(
+                        ".fits")])
         for i, filename in enumerate(specs):
             print("Convolving file {} ({} / {})".format(filename, i+1,
                                                         len(specs)))
             filepath = os.path.join(input_dir, filename)
-            spec = read_fits.read_fits_spectrum1d(filepath)
-            wave = spec.wavelength.to("AA").value
-            flux = spec.flux
+            output = os.path.join(output_dir, filename)
+            data = Table.read(filepath, format="fits")
+            wave = data["WAVE"]
+            flux = data["FLUX"]
+            fluxerr = data["FLUXERR"]
             muse_fwhm = get_muse_fwhm()
             obsres = muse_fwhm(wave)
-            broad = broad2res(wave, flux, obsres, res)[0]
-            h = fits.getheader(filepath)
-            hdu = fits.PrimaryHDU(data=broad.value, header=h)
-            hdulist = fits.HDUList([hdu])
-            hdulist.writeto(os.path.join(output_dir, filename), overwrite=True)
+            newflux, newfluxerr = broad2res(wave.to("AA").value, flux, obsres,
+                                            res, fluxerr=fluxerr)
+            newtable = Table([wave, newflux, newfluxerr],
+                             names=["wave", "flux", "fluxerr"])
+            newtable.write(output)
+
 
 if __name__ == "__main__":
     # plot_muse_fwhm()
     # plot_vel_resolution()
-    broad_binned(context.fields, 2.95)
+    broad_binned(context.fields, 2.95, targetSN=150)

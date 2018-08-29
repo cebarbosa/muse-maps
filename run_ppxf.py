@@ -21,6 +21,7 @@ from specutils.io.read_fits import read_fits_spectrum1d
 
 from ppxf.ppxf import ppxf, reddening_curve
 import ppxf.ppxf_util as util
+from spectres import spectres
 
 import context
 from misc import array_from_header, snr
@@ -148,9 +149,9 @@ class pPXF():
         self.goodpixels = np.where(np.isin(np.arange(len(self.w)),
                                            self.goodpixels), 1, 0)
         rows = ["w", "galaxy", "bestfit", "ssps", "gas", "apoly", "mpoly",
-                "goodpixels", "extinction", "bestsky"]
+                "goodpixels", "extinction", "bestsky", "noise"]
         rownames = ["wave", "flux", "bestfit", "ssps", "emission", "apoly",
-                    "mpoly", "goodpixels", "reddening", "sky"]
+                    "mpoly", "goodpixels", "reddening", "sky", "noise"]
         table = Table()
         for row, rowname in zip(rows, rownames):
             if hasattr(self, row):
@@ -159,12 +160,12 @@ class pPXF():
                 delattr(self, row)
         self.table = table
         # Remove large arrays which can be reconstructed later if necessary
-        rmkeys = ["matrix", "star_rfft", "lam", "noise", "star"]
+        rmkeys = ["matrix", "star_rfft", "lam", "star"]
         for key in rmkeys:
             if hasattr(self, key):
                 delattr(self, key)
         output = os.path.join(logdir, "{}.pkl".format(self.name))
-        with open(output, "w") as f:
+        with open(output, "wb") as f:
             pickle.dump(self, f)
         return
 
@@ -197,13 +198,14 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
     for field in fields:
         print("Working on Field {0}".format(field[-1]))
         os.chdir(os.path.join(context.data_dir, dataset, field,
-                              "spec1d_FWHM2.95"))
+                              "molecfit_sn{}/output".format(targetSN)))
         logdir = os.path.join(context.data_dir, dataset, field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
         if not os.path.exists(logdir):
             os.mkdir(logdir)
-        filenames = sorted(os.listdir("."))
+        filenames = [_ for _ in sorted(os.listdir(".")) if _.endswith(
+            "_TAC.fits")]
         ######################################################################
         for i, fname in enumerate(filenames):
             name = fname.replace(".fits", "")
@@ -213,20 +215,24 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
             print("=" * 80)
             print("PPXF run {0}/{1}".format(i+1, len(filenames)))
             print("=" * 80)
-            spec = read_fits_spectrum1d(fname)
+            data = Table.read(fname)
+            wave = data["wave"].to(u.Angstrom).value
+            flux = data["tacflux"]
+            fluxerr = data["tacdflux"]
             ###################################################################
             # Trim spectrum according to templates
             idx = np.argwhere(np.logical_and(
-                              spec.wavelength.value > wave_temp[0],
-                              spec.wavelength.value < wave_temp[-1]))
-            wave = spec.wavelength[idx].T[0].value
-            flux = spec.flux[idx].T[0].value
+                              wave > wave_temp[0],
+                              wave < wave_temp[-1]))
+            wave = wave[idx].T[0]
+            flux = flux[idx].T[0]
+            fluxerr = fluxerr[idx].T[0]
             ###################################################################
-            signal, noise, sn = snr(flux)
             galaxy, logLam, vtemp = util.log_rebin([wave[0], wave[-1]],
                                                    flux, velscale=velscale)
+            noise = util.log_rebin([wave[0], wave[-1]],fluxerr,
+                                   velscale=velscale)[0]
             dv = (logwave_temp[0]-logLam[0]) * constants.c.to("km/s").value
-            noise =  np.ones_like(galaxy) * noise
             lam = np.exp(logLam)
             kwargs["lam"] = lam
             ###################################################################
@@ -243,7 +249,6 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
             kwargs["goodpixels"] = goodpixels
             ###################################################################
             kwargs["vsyst"] = dv
-            # First fitting
             pp = ppxf(templates, galaxy, noise, velscale, **kwargs)
             title = "Field {0} Bin {1}".format(field[-1], bin)
             pp.name = name
@@ -286,7 +291,7 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
         pkls = sorted([x for x in os.listdir(".") if x.endswith("pkl")])
         for i, fname in enumerate(pkls):
             print(" Processing pPXF solution {0} / {1}".format(i+1, len(pkls)))
-            with open(fname) as f:
+            with open(fname, "rb") as f:
                 pp = pickle.load(f)
             sol = pp.sol if pp.ncomp == 1 else pp.sol[0]
             sol[0] += context.vhelio[field]
@@ -338,7 +343,7 @@ def run_stellar_populations(fields, targetSN, w1, w2,
     return
 
 if __name__ == '__main__':
-    targetSN = 70
+    targetSN = 150
     w1 = 4500
     w2 = 10000
     ##########################################################################

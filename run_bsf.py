@@ -24,7 +24,7 @@ from bsf.bsf.bsf import BSF
 def fit(idx, redo=False, statmodel="nssps"):
     """ Perform the fitting in one of the spectra. """
     home_dir = os.path.join(context.home, "ssp_modeling",
-                            "hydraimf_w4700_9100_dw2_sigma350_all_ssps")
+                            "fit_w4700_9100_dw2_sigma350_sn150")
     # Selecting spectrum
     data_dir = os.path.join(home_dir, "data")
     filenames = sorted(os.listdir(data_dir))
@@ -56,10 +56,11 @@ def fit(idx, redo=False, statmodel="nssps"):
     if not os.path.exists(results_dir):
         os.mkdir(results_dir)
     data = Table.read(os.path.join(data_dir, filename))
-    flux = data["flux"]
+    flux = data["flux"].data
+    fluxerr = data["fluxerr"].data
     obswave = data["obswave"]
     bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel,
-              reddening=False, mdegree=50, Nssps=50)
+              reddening=False, mdegree=50, Nssps=50, fluxerr=fluxerr)
     if not os.path.exists(dbname) or redo:
         with bsf.model:
             db = pm.backends.Text(dbname)

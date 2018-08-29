@@ -42,6 +42,7 @@ def collapse_cube(cubename, outfile, redo=False):
     if os.path.exists(outfile) and not redo:
         return
     data = fits.getdata(cubename, 1)
+    var = fits.getdata(cubename, 2)
     h = fits.getheader(cubename, 1)
     h2 = fits.getheader(cubename, 2)
     h["NAXIS"] = 2
@@ -50,9 +51,10 @@ def collapse_cube(cubename, outfile, redo=False):
     del h2["NAXIS3"]
     print("Starting collapsing process...")
     newdata = np.nanmedian(data, axis=0)
-    noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
-           np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
-           axis=0)
+    # noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
+    #        np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
+    #        axis=0)
+    noise = np.nanmedian(np.sqrt(var))
     hdu = fits.PrimaryHDU(newdata, h)
     hdu2 = fits.ImageHDU(noise, h2)
     hdulist = fits.HDUList([hdu, hdu2])
@@ -210,10 +212,11 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
         Redo combination in case the output spec already exists.
 
     """
-    outdir = os.path.join(os.getcwd(), "spec1d")
+    outdir = os.path.join(os.getcwd(), "spec1d_sn{}".format(targetSN))
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     data = fits.getdata(cubename, 1)
+    errdata = np.sqrt(fits.getdata(cubename, 2))
     h = fits.getheader(cubename, 1)
     ############################################################################
     # Preparing header for output
@@ -232,29 +235,36 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
     bins = np.unique(vordata)[:-1]
     for j, bin in enumerate(bins):
         idx, idy = np.where(vordata == bin)
-        print("Bin {0} / {1} (ncombine={2})".format(j + 1, bins.size, len(idx)))
+        ncombine = len(idx)
+        print("Bin {0} / {1} (ncombine={2})".format(j + 1, bins.size, ncombine))
         output = os.path.join(outdir, "{}_sn{}_{:04d}.fits".format(field,
                               targetSN, int(bin)))
         if os.path.exists(output) and not redo:
             continue
         specs = data[:,idx,idy]
+        errors = errdata[:,idx,idy]
+        errs = np.sqrt(np.nansum(errors**2, axis=1)) / ncombine
         combined = np.nanmean(specs, axis=1)
         hdu = fits.PrimaryHDU(combined, hnew)
-        hdulist = fits.HDUList([hdu])
+        hdu2 = fits.ImageHDU(errs, hnew)
+        hdulist = fits.HDUList([hdu, hdu2])
         hdulist.writeto(output, overwrite=True)
     return
 
-def make_bin_table(field):
+def make_bin_table(targetSN):
     """ Include keywords in the header preparing to use molecfit. """
-    indir = os.path.join(os.getcwd(), "spec1d")
-    outdir = os.path.join(os.getcwd(), "spectab")
+    indir = os.path.join(os.getcwd(), "spec1d_sn{}".format(targetSN))
+    outdir = os.path.join(os.getcwd(), "spectab_sn{}".format(targetSN))
     if not os.path.exists(outdir):
         os.mkdir(outdir)
-    for f in os.listdir(indir):
+    for f in sorted(os.listdir(indir)):
         filename = os.path.join(indir, f)
         spec = read_fits.read_fits_spectrum1d(filename)
-        table = Table([spec.wavelength, spec.flux],
-                      names=["wlen", "flux"])
+        hdulist = fits.open(filename)
+        data = hdulist[0].data
+        error = hdulist[1].data
+        table = Table([spec.wavelength, data, error],
+                      names=["WAVE", "FLUX", "FLUXERR"])
         table.write(os.path.join(outdir, f), format="fits", overwrite=True)
 
 def run(fields, targetSN=70, dataset="MUSE-DEEP"):
@@ -272,8 +282,8 @@ def run(fields, targetSN=70, dataset="MUSE-DEEP"):
         geom = calc_geom(voronoi2D, imgname)
         voronoi2D = sort_voronoi2D(voronoi2D, imgname)
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
-        # make_bin_table(field)
+        make_bin_table(targetSN)
 
 if __name__ == '__main__':
     fields = context.fields
-    run(fields, targetSN=300, dataset="MUSE-DEEP")
+    run(fields, targetSN=150, dataset="MUSE-DEEP")

@@ -682,14 +682,14 @@
 #
 ################################################################################
 
-from __future__ import print_function
+from __future__ import print_function, absolute_import
 
 import numpy as np
 import matplotlib.pyplot as plt
 from numpy.polynomial import legendre
 from scipy import ndimage, optimize, linalg
  
-import cap_mpfit as mpfit
+import ppxf.cap_mpfit as mpfit
 
 #-------------------------------------------------------------------------------
 

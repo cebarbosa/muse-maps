@@ -69,7 +69,7 @@ def run(redo=False):
     #     style for style in plt.style.available if style != 'classic')
     # print(style_list)
     home_dir = os.path.join(context.home, "ssp_modeling",
-                            "hydraimf_w4700_9100_dw2_sigma350_all_ssps")
+                            "fit_w4700_9100_dw2_sigma350_sn100")
     statmodel = "nssps"
     data_dir = os.path.join(home_dir, "data")
     results_dir = os.path.join(home_dir, statmodel)
