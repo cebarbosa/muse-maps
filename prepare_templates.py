@@ -35,7 +35,7 @@ class EMiles_models():
         else:
             self.path = path
         self.sample = "all" if sample is None else sample
-        if self.sample not in ["all", "test", "salpeter_regular", "minimal"]:
+        if self.sample not in ["all", "test", "salpeter", "minimal"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
         self.values = self.Values(self.sample)
@@ -61,13 +61,13 @@ class EMiles_models():
                 self.age = np.array([10., 14.])
                 self.alphaFe = np.array([0., 0.2])
                 self.NaFe = np.array([0., 0.3])
-            elif sample == "salpeter_regular":
+            elif sample == "salpeter":
                 self.exponents = np.array([1.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
                                      0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 14)
-                self.alphaFe = np.array([0., 0.4])
-                self.NaFe = np.array([0., 0.6])
+                self.alphaFe = np.array([0., 0.2, 0.4])
+                self.NaFe = np.array([0., 0.3, 0.6])
             if sample == "test":
                 self.exponents = np.array([1.0, 1.3, 1.5])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     w2 = 10000
     velscale = 30 # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="minimal",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
