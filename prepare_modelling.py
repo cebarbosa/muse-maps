@@ -37,8 +37,9 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
 
     w1 = 4500
     w2 = 10000
+    wnorm = 5635
+    dnorm = 40
     w0resamp = np.arange(outw1, outw2, dw)
-    idxnorm = len(w0resamp) // 2
     for field in context.fields:
         wdir = os.path.join(context.data_dir, dataset, field)
         data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
@@ -60,7 +61,10 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             ####################################################################
             # Subtracting emission lines
             wave = pp.table["wave"]
+            idx_norm = np.where(np.logical_and(wave > wnorm - dnorm,
+                                               wave < wnorm + dnorm))[0]
             flux = pp.table["flux"] - pp.table["emission"]
+            norm = np.median(flux[idx_norm])
             fluxerr = pp.table["noise"]
             # Convolve spectrum to given sigma
             losvd = pp.sol[0]
@@ -82,7 +86,7 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             # Resampling the spectra
             fresamp = spectres(w0resamp, w0, flux)
             fresamperr = spectres(w0resamp, w0, fluxerr)
-            norm = fresamp[idxnorm] * np.ones_like(fresamp)
+            norm = np.full_like(fresamp, norm)
             fresamp /= norm
             fresamperr /= norm
             table = Table([w0resamp, wresamp, fresamp, fresamperr, norm],
@@ -98,6 +102,8 @@ def prepare_templates(outw1, outw2, dw, outdir, sigma=350, redo=False,
     sample = "all" if sample is None else sample
     w1 = 4500
     w2 = 10000
+    wnorm = 5635
+    dnorm = 40
     tempfile = os.path.join(context.home, "templates",
         "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
                                                   sample))
@@ -107,12 +113,13 @@ def prepare_templates(outw1, outw2, dw, outdir, sigma=350, redo=False,
         wave = fits.getdata(output, 1)
         params = fits.getdata(output, 2)
         return wave, params, templates
-    wave = np.exp(array_from_header(tempfile, axis=1,
-                                                  extension=0))
+    wave = np.exp(array_from_header(tempfile, axis=1, extension=0))
+
     ssps = fits.getdata(tempfile, 0)
     params = Table.read(tempfile, hdu=2)
     newwave = np.arange(outw1, outw2, dw)
-    idxnorm = len(newwave) // 2
+    idx_norm = np.where(np.logical_and(wave > wnorm - dnorm,
+                                       wave < wnorm + dnorm))[0]
     templates = np.zeros((len(ssps), len(newwave)))
     norms = np.zeros(len(ssps))
     for i in np.arange(len(ssps)):
@@ -121,7 +128,7 @@ def prepare_templates(outw1, outw2, dw, outdir, sigma=350, redo=False,
         flux = gaussian_filter1d(ssps[i], sigma_pix, mode="constant",
                                  cval=0.0)
         newflux = spectres(newwave, wave, flux)
-        norm = newflux[idxnorm]
+        norm = np.median(flux[idx_norm])
         newflux /= norm
         templates[i] = newflux
         norms[i] = norm
@@ -248,7 +255,7 @@ def run(redo=True):
     outw1 = 4700
     outw2 = 9100
     dw = 2
-    sample = "all"
+    sample = "salpeter"
     sigma = 350 # km / s
     targetSN = 150
     # Setting unique name for particular modeling
@@ -270,31 +277,6 @@ def run(redo=True):
     wave, params, templates = prepare_templates(outw1, outw2, dw,
                                                 templates_dir, redo=redo,
                                                 sample=sample, sigma=sigma)
-    params = Table(params)
-    norm = params["norm"]
-    # Proceed to fit
-    # templates = np.array(templates, dtype=np.float)
-    # results_dir = os.path.join(outdir, "npfit")
-    # specs = sorted([_ for _ in os.listdir(data_dir) if _.startswith("field")])
-    # for spec in specs:
-    #     dbname = os.path.join(results_dir, spec.replace(".fits", ".db"))
-    #     summary = os.path.join(results_dir, spec.replace(".fits", ".txt"))
-    #     data = Table.read(os.path.join(data_dir, spec))
-    #     flux = data["flux"]
-    #     norm = np.nanmedian(flux)
-    #     obswave = data["obswave"]
-    #     flux /= norm
-    #     if not os.path.exists(dbname) or redo:
-    #         csp = BSF(obswave, flux, templates, reddening=True)
-    #         csp.NUTS_sampling(nsamp=1000, sample_kwargs={"tune":1000})
-    #         data = {'model': csp.model, 'trace': csp.trace}
-    #         with open(dbname, 'wb') as f:
-    #             pickle.dump(data, f)
-    #         df = pm.df_summary(csp.trace)
-    #         df.to_csv(summary)
-    #     plot(obswave, flux, norm, dbname, outw1, outw2, dw,
-    #          sample=sample)
-
 
 if __name__ == "__main__":
-    run(redo=False)
+    run(redo=True)
