@@ -54,20 +54,24 @@ def mask_regions(img, redo=False):
     hdu.writeto(outfile, overwrite=True)
     return outfile
 
-def run_sextractor(img, redo=False, outfile=None):
+def run_sextractor(img, redo=False, outfile=None, segmentation_file=None,
+                   save=False):
     """ Produces a catalogue of sources in a given field. """
     if outfile is None:
         outfile = "sexcat.fits"
+    if segmentation_file is None:
+        segmentation_file = "segmentation.fits"
     if os.path.exists(outfile) and not redo:
         return outfile
     params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "KRON_RADIUS", "ELLIPTICITY",
                "THETA_IMAGE", "A_IMAGE", "B_IMAGE", "MAG_AUTO"]
     config = {"CHECKIMAGE_TYPE": "SEGMENTATION",
-                            "CHECKIMAGE_NAME": "segmentation.fits",
+                            "CHECKIMAGE_NAME": segmentation_file,
                             "DETECT_THRESH" : 1.5}
     sew = sewpy.SEW(config=config, sexpath="sextractor", params=params)
     cat = sew(img)
-    cat["table"].write(outfile, format="fits", overwrite=True)
+    if save:
+        cat["table"].write(outfile, format="fits", overwrite=True)
     return outfile
 
 def mask_sources(img, cat, field, redo=False, output=None):
