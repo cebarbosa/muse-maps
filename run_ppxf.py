@@ -198,14 +198,13 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
     for field in fields:
         print("Working on Field {0}".format(field[-1]))
         os.chdir(os.path.join(context.data_dir, dataset, field,
-                              "molecfit_sn{}/output".format(targetSN)))
+                              "spectab_FWHM2.95_sn{}".format(targetSN)))
         logdir = os.path.join(context.data_dir, dataset, field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
         if not os.path.exists(logdir):
             os.mkdir(logdir)
-        filenames = [_ for _ in sorted(os.listdir(".")) if _.endswith(
-            "_TAC.fits")]
+        filenames = [_ for _ in sorted(os.listdir(".")) if _.endswith(".fits")]
         ######################################################################
         for i, fname in enumerate(filenames):
             name = fname.replace(".fits", "")
@@ -217,8 +216,8 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
             print("=" * 80)
             data = Table.read(fname)
             wave = data["wave"].to(u.Angstrom).value
-            flux = data["tacflux"]
-            fluxerr = data["tacdflux"]
+            flux = data["flux"]
+            fluxerr = data["fluxerr"]
             ###################################################################
             # Trim spectrum according to templates
             idx = np.argwhere(np.logical_and(
