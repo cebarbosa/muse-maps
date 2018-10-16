@@ -11,6 +11,8 @@ Project definitions
 import os
 import getpass
 
+import matplotlib.pyplot as plt
+
 if getpass.getuser() == "kadu":
     home = "/home/kadu/Dropbox/hydraimf"
 else:
@@ -32,6 +34,11 @@ dec0 = -27.5281283035
 # observed velocities.
 vhelio = {"fieldA" : 24.77, "fieldB" : 21.26, "fieldC" : 20.80,
           "fieldD" : 19.09} # km / s
+
+plt.style.context("seaborn-paper")
+plt.rcParams["text.usetex"] = True
+plt.rcParams["font.family"] = "serif"
+plt.rcParams['font.serif'] = 'Computer Modern'
 
 def get_field_files(field, dataset="MUSE-DEEP"):
     """ Returns the names of the image and cube associated with a given
