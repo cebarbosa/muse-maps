@@ -35,7 +35,8 @@ class EMiles_models():
         else:
             self.path = path
         self.sample = "all" if sample is None else sample
-        if self.sample not in ["all", "test", "salpeter", "minimal"]:
+        if self.sample not in ["all", "test", "salpeter", "minimal",
+                               "kinematics"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
         self.values = self.Values(self.sample)
@@ -75,6 +76,14 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
+            if sample == "kinematics":
+                self.exponents = np.array([1.3])
+                self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
+                                     0.15,  0.26,  0.4])
+                self.age = np.linspace(1., 14., 14)
+                self.alphaFe = np.array([0., 0.4])
+                self.NaFe = np.array([0., 0.6])
+
 
             return
 
@@ -111,10 +120,12 @@ def trim_templates(emiles, w1=4500, w2=10000, redo=False):
     return
 
 def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
-                                  fwhm=None):
+                                  fwhm=None, instrument=None):
     """ Pipeline for the preparation of the templates."""
+    instrument = "muse" if instrument is None else instrument
     output = os.path.join(context.home, "templates",
-            "emiles_muse_vel{}_w{}_{}_{}.fits".format(velscale, w1, w2, sample))
+            "emiles_{}_vel{}_w{}_{}_{}.fits".format(instrument, velscale, w1,
+                                                    w2, sample))
     if os.path.exists(output) and not redo:
         return
     fwhm = 2.95 if fwhm is None else fwhm
@@ -149,14 +160,15 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
         os.mkdir(newfolder)
     ############################################################################
     # Sub routine to process a single spectrum
-    def process_spec(filename, redo=False):
-        global velscale
+    def process_spec(filename, velscale, redo=False):
         outname = os.path.join(newfolder, os.path.split(filename)[1])
         if os.path.exists(outname) and not redo:
             return
         spec = Table.read(filename, format="fits")
-        flux = spec["flux"]
-        flux = broad2res(wave, flux.T, np.ones_like(wave) * 2.51, res=fwhm)[0].T
+        flux = spec["flux"].data
+        if fwhm > 2.51:
+            flux = broad2res(wave, flux.T, np.ones_like(wave) * 2.51,
+                             res=fwhm)[0].T
         newflux, logLam, velscale = util.log_rebin(wrange, flux,
                                                velscale=velscale)
 
@@ -166,7 +178,7 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     ############################################################################
     for i, fname in enumerate(filenames):
         print("Processing SSP {}".format(i+1))
-        process_spec(fname)
+        process_spec(fname, velscale)
     for i, args in enumerate(grid):
         print("Processing SSP {}".format(i+1))
         filename = os.path.join(newfolder, emiles.get_filename(*args))
@@ -194,12 +206,29 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     hdulist.writeto(output, overwrite=True)
     return
 
-if __name__ == "__main__":
+def prepare_muse():
     w1 = 4500
     w2 = 10000
-    velscale = 30 # km / s
+    velscale = 30  # km / s
     starttime = datetime.now()
     prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
+
+def prepare_wifis():
+    w1 = 8500
+    w2 = 13500
+    velscale = 20 # km / s
+    starttime = datetime.now()
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="kinematics",
+                                  redo=True, fwhm=2.5, instrument="wifis")
+    endtime = datetime.now()
+    print("The program took {} to run".format(endtime - starttime))
+
+
+if __name__ == "__main__":
+    # prepare_muse()
+    prepare_wifis()
+
+
