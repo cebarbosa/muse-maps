@@ -16,7 +16,6 @@ import os
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
-import matplotlib.pyplot as plt
 
 import context
 from source_extraction import run_sextractor
@@ -50,37 +49,25 @@ def get_cube_names():
     table.write(output, format="ascii", overwrite=True)
     return table
 
-def extract_sky_spectra(table):
-    """ Performs the extraction of the sky spectra. """
+def make_sky_masks(table, redo=False):
+    """ Select regions to be used as masks for ZAP. """
     for field in table:
-        print(field)
+        output = "skymask_{}.fits".format(field["id"])
+        if os.path.exists(output) and not redo:
+            continue
         segfile = "{}_segmentation.fits".format(field["id"])
-        output = "sky_{}.fits".format(field["id"])
         if not os.path.exists(segfile):
             run_sextractor(field["img"], segmentation_file=segfile)
         img = fits.getdata(field["img"])
-        mask = np.where(np.isnan(img))
-        segmentation = fits.getdata(segfile)
-        segmentation[mask] = 1
-        segmentation[segmentation>0] = 1
-        idy, idx = np.where(segmentation==0)
-        ncombine = len(idx)
-        hdr = fits.getheader(field["cube"], 1)
-        wave = ((np.arange(hdr['NAXIS3']) + 1 - hdr['CRPIX3']) * hdr['CD3_3'] \
-                + hdr['CRVAL3'])
-        data = fits.getdata(field["cube"], 1)
-        errdata = np.sqrt(fits.getdata(field["cube"], 2))
-        specs = data[:,idy,idx]
-        errors = errdata[:,idy,idx]
-        errs = np.sqrt(np.nansum(errors**2, axis=1)) / ncombine
-        combined = np.nanmean(specs, axis=1)
-        tab = Table([wave, combined, errs], names=["wave", "flux", "fluxerr"])
-        tab.write(output, format="fits", overwrite=True)
-
-
+        nans = np.where(np.isnan(img))
+        mask = fits.getdata(segfile)
+        mask[nans] = 1
+        mask[mask>0] = 1
+        hdu = fits.PrimaryHDU(mask)
+        hdu.writeto(output, overwrite=True)
 
 if __name__ == "__main__":
     wdir = os.path.join(context.data_dir, "sky")
     os.chdir(wdir)
     table = get_cube_names()
-    extract_sky_spectra(table)
+    make_sky_masks(table)
