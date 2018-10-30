@@ -34,7 +34,6 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
                 velscale=None, sigma=350, targetSN=150):
     """ Prepare spectra for CSP modeling """
     velscale = context.velscale if velscale is None else velscale
-
     w1 = 4500
     w2 = 10000
     wnorm = 5635
@@ -254,8 +253,8 @@ def run(redo=True):
     # Parameters for the resampling
     outw1 = 4700
     outw2 = 9100
-    dw = 2
-    sample = "salpeter"
+    dw = 4
+    sample = "bsf"
     sigma = 350 # km / s
     targetSN = 150
     # Setting unique name for particular modeling
@@ -268,8 +267,8 @@ def run(redo=True):
     data_dir = os.path.join(outdir, "data")
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
-    prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
-                    targetSN=targetSN)
+    # prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
+    #                 targetSN=targetSN)
     # Setting templates
     templates_dir = os.path.join(outdir, "templates")
     if not os.path.exists(templates_dir):
