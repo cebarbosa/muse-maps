@@ -54,8 +54,12 @@ if __name__ == "__main__":
     os.chdir(zap_dir)
     table = prepare_zap_input()
     for field in table:
-        if os.path.exists(field["out_cube"]):
+        output = os.path.join(os.getcwd(), "{}.fits".format(field["out_cube"]))
+        if os.path.exists(output):
             continue
-        extSVD = zap.SVDoutput(field["sky_cube"])
-        zap.process(field["sci_cube"], outcubefits=field["out_cube"],
+        mask = os.path.join(context.data_dir, "sky", "skymask_{}.fits".format(
+            field["out_cube"].replace("NGC3311_", "")))
+        extSVD = zap.SVDoutput(field["sky_cube"], mask=mask)
+        zap.process(field["sci_cube"], outcubefits=output,
                     extSVD=extSVD)
+        break
