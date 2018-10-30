@@ -35,7 +35,7 @@ class EMiles_models():
         else:
             self.path = path
         self.sample = "all" if sample is None else sample
-        if self.sample not in ["all", "test", "salpeter", "minimal",
+        if self.sample not in ["all", "bsf", "salpeter", "minimal",
                                "kinematics"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
@@ -69,8 +69,8 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
-            if sample == "test":
-                self.exponents = np.array([1.0, 1.3, 1.5])
+            if sample == "bsf":
+                self.exponents = np.array([0.5, 1.3, 2.0])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
                                      0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 14)
@@ -171,7 +171,6 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
                              res=fwhm)[0].T
         newflux, logLam, velscale = util.log_rebin(wrange, flux,
                                                velscale=velscale)
-
         hdu = fits.PrimaryHDU(newflux)
         hdu.writeto(outname, overwrite=True)
         return
@@ -195,14 +194,20 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
         lname, lwave = eml
         emission[i] = np.exp(-(wave - lwave) ** 2 / (2 * sigma * sigma))
     hdu1 = fits.PrimaryHDU(ssps)
+    hdu1.header["EXTNAME"] = "SSPS"
     hdu2 = fits.ImageHDU(emission)
+    hdu2.header["EXTNAME"] = "EMISSION_LINES"
     params = Table(params, names=["alpha", "[Z/H]", "age", "[alpha/Fe]",
                                   "[Na/Fe]"])
     hdu3 = fits.BinTableHDU(params)
+    hdu3.header["EXTNAME"] = "PARAMS"
     hdu1.header["CRVAL1"] = logLam[0]
     hdu1.header["CD1_1"] = logLam[1] - logLam[0]
     hdu1.header["CRPIX1"] = 1.
-    hdulist = fits.HDUList([hdu1, hdu2, hdu3])
+    # Making wavelength array
+    hdu4 = fits.BinTableHDU(Table([logLam], names=["loglam"]))
+    hdu4.header["EXTNAME"] = "LOGLAM"
+    hdulist = fits.HDUList([hdu1, hdu2, hdu3, hdu4])
     hdulist.writeto(output, overwrite=True)
     return
 
@@ -211,14 +216,14 @@ def prepare_muse():
     w2 = 10000
     velscale = 30  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="salpeter",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="bsf",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
 
 def prepare_wifis():
-    w1 = 8500
-    w2 = 13500
+    w1 = 11600
+    w2 = 12400
     velscale = 20 # km / s
     starttime = datetime.now()
     prepare_templates_emiles_muse(w1, w2, velscale, sample="kinematics",
@@ -228,7 +233,7 @@ def prepare_wifis():
 
 
 if __name__ == "__main__":
-    # prepare_muse()
-    prepare_wifis()
+    prepare_muse()
+    # prepare_wifis()
 
 
