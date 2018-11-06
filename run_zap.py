@@ -20,13 +20,13 @@ import context
 
 def prepare_zap_input():
     """ Make table with corresponding science and sky cubes. """
-    output = "zap_table.fits"
+    output = os.path.join(context.data_dir, "MUSE/tables/zap_table.fits")
     if os.path.exists(output):
         table = Table.read(output)
         return table
     datacubes = []
-    for dir_ in ["MUSE", "sky"]:
-        data_dir = os.path.join(context.data_dir, dir_)
+    for dir_ in ["sci", "sky"]:
+        data_dir = os.path.join(context.data_dir, "MUSE", dir_)
         fnames = [os.path.join(data_dir,_) for _ in os.listdir(data_dir) if
                   _.endswith("fits") and _.startswith("ADP")]
         datacubes.append([_ for _ in fnames if fits.getval(_, "NAXIS",
@@ -39,7 +39,7 @@ def prepare_zap_input():
         s = "SKY_for_{}".format(obj)
         idx = skyobj.index(s)
         corresponding_sky.append(skycubes[idx])
-        outcubes.append(obj)
+        outcubes.append("{}.fits".format(obj))
     table = Table([scicubes, corresponding_sky, outcubes],
                   names=["sci_cube", "sky_cube", "out_cube"])
     table.write(output, overwrite=True)
@@ -48,7 +48,7 @@ def prepare_zap_input():
 
 
 if __name__ == "__main__":
-    zap_dir = os.path.join(context.data_dir, "zap")
+    zap_dir = os.path.join(context.data_dir, "MUSE/zap")
     if not os.path.exists(zap_dir):
         os.mkdir(zap_dir)
     os.chdir(zap_dir)
