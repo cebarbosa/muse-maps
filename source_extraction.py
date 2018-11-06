@@ -70,8 +70,7 @@ def run_sextractor(img, redo=False, outfile=None, segmentation_file=None,
                             "DETECT_THRESH" : 1.5}
     sew = sewpy.SEW(config=config, sexpath="sextractor", params=params)
     cat = sew(img)
-    if save:
-        cat["table"].write(outfile, format="fits", overwrite=True)
+    cat["table"].write(outfile, format="fits", overwrite=True)
     return outfile
 
 def mask_sources(img, cat, field, redo=False, output=None):
@@ -118,7 +117,7 @@ def calc_isophotes(x, y, x0, y0, PA, q):
 
 def ignore_sources(field):
     if field == "fieldA":
-        return [113, 114]
+        return [106, 107]
     else:
         return []
 
@@ -162,13 +161,15 @@ def simple_binning(img, field):
     return
 
 if __name__ == "__main__":
-    dataset = "MUSE-DEEP"
-    data_dir = os.path.join(context.data_dir, dataset)
-    fields = context.fields
+    dataset = "MUSE"
+    data_dir = os.path.join(context.data_dir, dataset, "combined")
+    os.chdir(data_dir)
+    fields = context.fields[:1]
     for field in fields:
         os.chdir(os.path.join(data_dir, field))
-        img, cube = context.get_field_files(field)
-        imgum = make_unsharp_mask(img, redo=False)
+        cubename = "NGC3311_{}_DATACUBE_COMBINED.fits".format(field)
+        imgname = "NGC3311_{}_IMAGE_COMBINED.fits".format(field)
+        imgum = make_unsharp_mask(imgname, redo=False)
         immasked = mask_regions(imgum, redo=False)
         sexcat = run_sextractor(immasked, redo=False)
         imhalo = mask_sources(immasked, sexcat, field, redo=True)
