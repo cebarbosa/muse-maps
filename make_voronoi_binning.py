@@ -43,25 +43,31 @@ def collapse_cube(cubename, outfile, redo=False):
         return
     data = fits.getdata(cubename, 1)
     var = fits.getdata(cubename, 2)
+    h0 = fits.getheader(cubename, 0)
     h = fits.getheader(cubename, 1)
     h2 = fits.getheader(cubename, 2)
     h["NAXIS"] = 2
-    del h["NAXIS3"]
     h2["NAXIS"] = 2
-    del h2["NAXIS3"]
+    del_keys = ["NAXIS3", "CTYPE3", "CUNIT3", "CD3_3", "CRPIX3", "CRVAL3",
+                "CRDER3", "CD1_3", "CD2_3", "CD3_1", "CD3_2"]
+    for key in del_keys:
+        del h2[key]
+        del h[key]
     print("Starting collapsing process...")
-    newdata = np.nanmedian(data, axis=0)
+    newdata = np.nanmean(data, axis=0)
     # noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
     #        np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
     #        axis=0)
-    noise = np.nanmedian(np.sqrt(var))
-    hdu = fits.PrimaryHDU(newdata, h)
+    noise = np.nanmean(np.sqrt(var), axis=0)
+    hdu0 = fits.PrimaryHDU()
+    hdu0.header = h0
+    hdu = fits.ImageHDU(newdata, h)
     hdu2 = fits.ImageHDU(noise, h2)
-    hdulist = fits.HDUList([hdu, hdu2])
+    hdulist = fits.HDUList([hdu0, hdu, hdu2])
     hdulist.writeto(outfile, overwrite=True)
     return
 
-def calc_binning(signal, noise, mask, targetSN, redo=False):
+def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
     """ Calculates Voronoi bins using only pixels in a mask.
 
     Input Parameters
@@ -84,7 +90,8 @@ def calc_binning(signal, noise, mask, targetSN, redo=False):
     str
         Name of the output ascii table.
     """
-    output = "voronoi_table_sn{}.txt".format(targetSN)
+    if output is None:
+        output = "voronoi_table_sn{}.txt".format(targetSN)
     if os.path.exists(output) and not redo:
         return output
     # Preparing position arrays
@@ -142,7 +149,7 @@ def calc_binning(signal, noise, mask, targetSN, redo=False):
     table.write(output, format="ascii", overwrite=True)
     return output
 
-def make_voronoi_image(bintable, img, targetSN, redo=False):
+def make_voronoi_image(bintable, img, targetSN, redo=False, output=None):
     """ Produces an check image for the Voronoi Tesselation.
 
     Input Parameters
@@ -165,7 +172,8 @@ def make_voronoi_image(bintable, img, targetSN, redo=False):
         str
         Name of the output image containing the Voronoi tesselation in 2D.
     """
-    output = "voronoi2d_sn{}.fits".format(targetSN)
+    if output is None:
+        output = "voronoi2d_sn{}.fits".format(targetSN)
     if os.path.exists(output) and not redo:
         return output
     tabledata = ascii.read(bintable)
@@ -254,7 +262,7 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
 def make_bin_table(targetSN):
     """ Include keywords in the header preparing to use molecfit. """
     indir = os.path.join(os.getcwd(), "spec1d_sn{}".format(targetSN))
-    outdir = os.path.join(os.getcwd(), "spectab_sn{}".format(targetSN))
+    outdir = os.path.join(os.getcwd(), "specs_sn{}".format(targetSN))
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     for f in sorted(os.listdir(indir)):
@@ -267,7 +275,9 @@ def make_bin_table(targetSN):
                       names=["WAVE", "FLUX", "FLUXERR"])
         table.write(os.path.join(outdir, f), format="fits", overwrite=True)
 
-def run(fields, targetSN=70, dataset="MUSE-DEEP"):
+def run_MUSE_DEEP(fields, targetSN=70):
+    """ Pipeline to run Voronoi on MUSE-DEEP data"""
+    dataset = "MUSE-DEEP"
     for field in fields:
         print(field)
         os.chdir(os.path.join(context.data_dir, dataset, field))
@@ -284,6 +294,24 @@ def run(fields, targetSN=70, dataset="MUSE-DEEP"):
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
         make_bin_table(targetSN)
 
+def run_MUSE(fields=None, targetSN=120):
+    """ Run pipeline using MUSE data. """
+    fields = context.fields[:1]
+    wdir = os.path.join(context.data_dir, "MUSE/combined")
+    for field in fields:
+        os.chdir(os.path.join(wdir, field))
+        cubename = "NGC3311_{}_DATACUBE_COMBINED.fits".format(field)
+        imgname = "NGC3311_{}_img.fits".format(field)
+        collapse_cube(cubename, imgname)
+        signal = fits.getdata(imgname, 1)
+        noise = fits.getdata(imgname, 2)
+        mask = fits.getdata("simple_binning.fits")
+        bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
+        voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=False)
+        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
+        combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
+        make_bin_table(targetSN)
+
+
 if __name__ == '__main__':
-    fields = context.fields
-    run(fields, targetSN=150, dataset="MUSE-DEEP")
+    run_MUSE(fields=["FieldA"])
