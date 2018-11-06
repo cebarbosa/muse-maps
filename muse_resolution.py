@@ -103,14 +103,14 @@ def plot_vel_resolution():
     plt.ylabel(r"Velocity scale - sigma (km/s)")
     plt.show()
 
-def broad_binned(fields, res, targetSN=70, dataset="MUSE-DEEP"):
+def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
     """ Performs convolution to homogeneize the resolution. """
     for field in fields:
         print(field)
-        input_dir = os.path.join(context.data_dir, dataset, field,
-                                 "spectab_sn{}".format(targetSN))
-        output_dir = os.path.join(context.data_dir, dataset, field,
-                                  "spectab_FWHM{}_sn{}".format(res, targetSN))
+        input_dir = os.path.join(context.data_dir, dataset, "combined", field,
+                                 "specs_sn{}".format(targetSN))
+        output_dir = os.path.join(context.data_dir, dataset, "combined", field,
+                                  "specs_FWHM{}_sn{}".format(res, targetSN))
         if not(os.path.exists(output_dir)):
             os.mkdir(output_dir)
         specs = sorted([_ for _ in os.listdir(input_dir) if _.endswith(
@@ -136,4 +136,4 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE-DEEP"):
 if __name__ == "__main__":
     # plot_muse_fwhm()
     # plot_vel_resolution()
-    broad_binned(context.fields, 2.95, targetSN=150)
+    broad_binned(context.fields[:1], 2.95, targetSN=150)
