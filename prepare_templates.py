@@ -216,7 +216,7 @@ def prepare_muse():
     w2 = 10000
     velscale = 30  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="bsf",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="kinematics",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
