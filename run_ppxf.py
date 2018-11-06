@@ -27,7 +27,6 @@ import context
 from misc import array_from_header, snr
 from geomfov import get_geom
 
-
 class pPXF():
     """ Class to read pPXF pkl files """
     def __init__(self, pp):
@@ -101,11 +100,14 @@ class pPXF():
         gs = gridspec.GridSpec(2, 1, height_ratios=[2.5,1])
         ax = plt.subplot(gs[0])
         ax.minorticks_on()
-        ax.plot(self.w[self.goodpixels], self.galaxy[self.goodpixels], "-",
+        ax.plot(self.w[self.goodpixels], self.galaxy[self.goodpixels] -
+                self.bestsky[self.goodpixels], "-",
                 label="Data (S/N={0:.1f})".format(self.sn))
         ax.plot(self.w[self.goodpixels], self.bestfit[self.goodpixels], "-",
                 label="SSPs: V={0:.0f} km/s, $\sigma$={1:.0f} km/s".format(
                     sol[0], sol[1]))
+        ax.plot(self.w[self.goodpixels], self.bestsky[self.goodpixels], "-",
+                label="Sky")
         ax.xaxis.set_ticklabels([])
         if self.ncomp == 2:
             ax.plot(self.w[self.goodpixels], self.gas[self.goodpixels], "-",
@@ -175,7 +177,7 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
     if velscale is None:
         velscale = context.velscale
     if dataset is None:
-        dataset = "MUSE-DEEP"
+        dataset = "MUSE"
     logwave_temp = array_from_header(tempfile, axis=1, extension=0)
     wave_temp = np.exp(logwave_temp)
     stars = fits.getdata(tempfile, 0)
@@ -194,18 +196,19 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
         templates = np.column_stack((stars.T, emission.T))
         components = np.hstack((np.zeros(nstars), np.ones(ngas))).astype(int)
         kwargs["component"] = components
-    ##########################################################################
+    ###########################################################################
     for field in fields:
         print("Working on Field {0}".format(field[-1]))
-        os.chdir(os.path.join(context.data_dir, dataset, field,
-                              "spectab_FWHM2.95_sn{}".format(targetSN)))
-        logdir = os.path.join(context.data_dir, dataset, field,
+        os.chdir(os.path.join(context.data_dir, dataset, "combined", field,
+                              "specs_FWHM2.95_sn{}".format(targetSN)))
+        logdir = os.path.join(context.data_dir, dataset, "combined", field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
         if not os.path.exists(logdir):
             os.mkdir(logdir)
+        #######################################################################
+        # Processing the spectra of a field
         filenames = [_ for _ in sorted(os.listdir(".")) if _.endswith(".fits")]
-        ######################################################################
         for i, fname in enumerate(filenames):
             name = fname.replace(".fits", "")
             output = os.path.join(logdir, "{}.pkl".format(name))
@@ -258,13 +261,16 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
             pp.velscale = velscale
             pp.ngas = ngas
             pp.ntemplates = nstars
+            pp.nsky = 2.
             pp.templates = 0
             pp.name = name
             pp.title = title
             pp = pPXF(pp)
             pp.plot(output=os.path.join(logdir, "{}.png".format(pp.name)))
             pp.save(logdir)
+            # plt.show()
             plt.clf()
+
     return
 
 def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
@@ -322,11 +328,11 @@ def run_stellar_populations(fields, targetSN, w1, w2,
                             dataset=None):
     """ Run pPXF on binned data using stellar population templates"""
     if sampling is None:
-        sampling = "salpeter_regular"
+        sampling = "kinematics"
     if velscale is None:
         velscale = context.velscale
     if dataset is None:
-        dataset = "MUSE-DEEP"
+        dataset = "MUSE"
     tempfile = os.path.join(context.home, "templates",
                "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
                                                     sampling))
@@ -347,4 +353,4 @@ if __name__ == '__main__':
     w2 = 10000
     ##########################################################################
     # Running stellar populations
-    run_stellar_populations(context.fields, targetSN, w1, w2, redo=False)
+    run_stellar_populations(context.fields[:1], targetSN, w1, w2, redo=False)
