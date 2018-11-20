@@ -130,7 +130,7 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
                                             res, fluxerr=fluxerr)
             newtable = Table([wave, newflux, newfluxerr],
                              names=["wave", "flux", "fluxerr"])
-            newtable.write(output)
+            newtable.write(output, overwrite=True)
 
 
 if __name__ == "__main__":
