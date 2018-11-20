@@ -72,9 +72,9 @@ def calc_geom(binfile, imgfile):
                         pa * u.degree], names=["BIN", "X", "Y", "R", "PA"])
     return table
 
-def get_geom(field, targetSN, dataset="MUSE-DEEP"):
+def get_geom(field, targetSN, dataset="MUSE"):
     """ Obtain table with geometric parameters given only field and bin S/N"""
-    binfile = os.path.join(context.data_dir, dataset, field,
+    binfile = os.path.join(context.data_dir, dataset, "combined", field,
                            "voronoi2d_sn{}.fits".format(targetSN))
     imgname, cubename = context.get_field_files(field)
     table = calc_geom(binfile, imgname)
