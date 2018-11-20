@@ -30,7 +30,7 @@ from misc import array_from_header
 
 from bsf.bsf.bsf import BSF
 
-def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
+def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE", redo=False,
                 velscale=None, sigma=350, targetSN=150):
     """ Prepare spectra for CSP modeling """
     velscale = context.velscale if velscale is None else velscale
@@ -40,15 +40,14 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
     dnorm = 40
     w0resamp = np.arange(outw1, outw2, dw)
     for field in context.fields:
-        wdir = os.path.join(context.data_dir, dataset, field)
+        wdir = os.path.join(context.data_dir, dataset, "combined", field)
         data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
             velscale), w1, w2, targetSN))
         if not os.path.exists(data_dir):
             continue
         pkls = sorted([_ for _ in os.listdir(data_dir) if _.endswith(".pkl")])
         for j, pkl in enumerate(pkls):
-            outfile = os.path.join(outdir,
-                              pkl.replace(".pkl", ".fits")).replace("_TAC", "")
+            outfile = os.path.join(outdir, pkl.replace(".pkl", ".fits"))
             if os.path.exists(outfile) and not redo:
                 continue
             print("Preparing input spectra {} ({}/{})".format(pkl, j + 1,
@@ -65,6 +64,7 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             flux = pp.table["flux"] - pp.table["emission"]
             norm = np.median(flux[idx_norm])
             fluxerr = pp.table["noise"]
+
             # Convolve spectrum to given sigma
             losvd = pp.sol[0]
             z = losvd[0] * u.km / u.s / constants.c
@@ -84,7 +84,7 @@ def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE-DEEP", redo=False,
             wresamp = (1 + z) * w0resamp
             # Resampling the spectra
             fresamp = spectres(w0resamp, w0, flux)
-            fresamperr = spectres(w0resamp, w0, fluxerr)
+            fresamperr = spectres(w0resamp, w0, newfluxerr)
             norm = np.full_like(fresamp, norm)
             fresamp /= norm
             fresamperr /= norm
@@ -267,8 +267,8 @@ def run(redo=True):
     data_dir = os.path.join(outdir, "data")
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
-    # prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
-    #                 targetSN=targetSN)
+    prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
+                    targetSN=targetSN)
     # Setting templates
     templates_dir = os.path.join(outdir, "templates")
     if not os.path.exists(templates_dir):
