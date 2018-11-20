@@ -21,8 +21,9 @@ from voronoi.voronoi_2d_binning import voronoi_2d_binning
 
 import context
 from geomfov import calc_geom
+from misc import array_from_header
 
-def collapse_cube(cubename, outfile, redo=False):
+def collapse_cube(cubename, outfile, redo=False, wmin=5590, wmax=5680):
     """ Collapse a MUSE data cube to produce a white-light image and a
     noise image.
 
@@ -46,6 +47,8 @@ def collapse_cube(cubename, outfile, redo=False):
     h0 = fits.getheader(cubename, 0)
     h = fits.getheader(cubename, 1)
     h2 = fits.getheader(cubename, 2)
+    wave = array_from_header(cubename)
+    idx = np.where((wave <= wmax) & (wave >= wmin))[0]
     h["NAXIS"] = 2
     h2["NAXIS"] = 2
     del_keys = ["NAXIS3", "CTYPE3", "CUNIT3", "CD3_3", "CRPIX3", "CRVAL3",
@@ -54,11 +57,11 @@ def collapse_cube(cubename, outfile, redo=False):
         del h2[key]
         del h[key]
     print("Starting collapsing process...")
-    newdata = np.nanmean(data, axis=0)
+    newdata = np.nanmean(data[idx,:,:], axis=0)
     # noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
     #        np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
     #        axis=0)
-    noise = np.nanmean(np.sqrt(var), axis=0)
+    noise = np.nanmean(np.sqrt(var[idx,:,:]), axis=0)
     hdu0 = fits.PrimaryHDU()
     hdu0.header = h0
     hdu = fits.ImageHDU(newdata, h)
@@ -133,7 +136,7 @@ def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
         try:
             binNum, xNode, yNode, xBar, yBar, sn, nPixels, \
             scale = voronoi_2d_binning(x, y, s, n, targetSN, plot=0,
-                                       quiet=0, pixelsize=1, cvt=False)
+                                       quiet=0, pixelsize=1, cvt=True)
             binNum += 1
         except ValueError:
             binNum = np.ones_like(x)
@@ -224,7 +227,7 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     data = fits.getdata(cubename, 1)
-    errdata = np.sqrt(fits.getdata(cubename, 2))
+    variance = np.sqrt(fits.getdata(cubename, 2))
     h = fits.getheader(cubename, 1)
     ############################################################################
     # Preparing header for output
@@ -249,10 +252,8 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
                               targetSN, int(bin)))
         if os.path.exists(output) and not redo:
             continue
-        specs = data[:,idx,idy]
-        errors = errdata[:,idx,idy]
-        errs = np.sqrt(np.nansum(errors**2, axis=1)) / ncombine
-        combined = np.nanmean(specs, axis=1)
+        errs = np.sqrt(np.nanmean(variance[:,idx,idy], axis=1))
+        combined = np.nanmean(data[:,idx,idy], axis=1)
         hdu = fits.PrimaryHDU(combined, hnew)
         hdu2 = fits.ImageHDU(errs, hnew)
         hdulist = fits.HDUList([hdu, hdu2])
@@ -294,24 +295,23 @@ def run_MUSE_DEEP(fields, targetSN=70):
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
         make_bin_table(targetSN)
 
-def run_MUSE(fields=None, targetSN=120):
+def run_MUSE(fields=None, targetSN=150):
     """ Run pipeline using MUSE data. """
-    fields = context.fields[:1]
     wdir = os.path.join(context.data_dir, "MUSE/combined")
     for field in fields:
         os.chdir(os.path.join(wdir, field))
         cubename = "NGC3311_{}_DATACUBE_COMBINED.fits".format(field)
         imgname = "NGC3311_{}_img.fits".format(field)
-        collapse_cube(cubename, imgname)
+        collapse_cube(cubename, imgname, redo=False)
         signal = fits.getdata(imgname, 1)
         noise = fits.getdata(imgname, 2)
         mask = fits.getdata("simple_binning.fits")
         bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
         voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=False)
         voronoi2D = sort_voronoi2D(voronoi2D, imgname)
-        combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
+        combine_spectra(cubename, voronoi2D, targetSN, field, redo=True)
         make_bin_table(targetSN)
 
 
 if __name__ == '__main__':
-    run_MUSE(fields=["FieldA"])
+    run_MUSE(fields=["fieldA"])
