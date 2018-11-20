@@ -273,7 +273,7 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
 
     return
 
-def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
+def make_table(fields, w1, w2, targetSN, dataset="MUSE",
                velscale=None, redo=True):
     """ Make table with results. """
     if velscale is None:
@@ -289,7 +289,7 @@ def make_table(fields, w1, w2, targetSN, dataset="MUSE-DEEP",
     for field in fields:
         print("Producing summary for Field {0}".format(field[-1]))
         geoms.append(get_geom(field, targetSN))
-        logdir = os.path.join(context.data_dir, dataset, field,
+        logdir = os.path.join(context.data_dir, dataset, "combined", field,
                               "ppxf_vel{}_w{}_{}_sn{}".format(int(velscale),
                                w1, w2, targetSN))
         os.chdir(logdir)
@@ -353,4 +353,4 @@ if __name__ == '__main__':
     w2 = 10000
     ##########################################################################
     # Running stellar populations
-    run_stellar_populations(context.fields[:1], targetSN, w1, w2, redo=False)
+    run_stellar_populations(context.fields[:1], targetSN, w1, w2, redo=True)
