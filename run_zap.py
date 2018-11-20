@@ -45,8 +45,6 @@ def prepare_zap_input():
     table.write(output, overwrite=True)
     return table
 
-
-
 if __name__ == "__main__":
     zap_dir = os.path.join(context.data_dir, "MUSE/zap")
     if not os.path.exists(zap_dir):
