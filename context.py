@@ -35,12 +35,19 @@ dec0 = -27.5281283035
 vhelio = {"fieldA" : 24.77, "fieldB" : 21.26, "fieldC" : 20.80,
           "fieldD" : 19.09} # km / s
 
+# Matplotlib settings
 plt.style.context("seaborn-paper")
 plt.rcParams["text.usetex"] = True
 plt.rcParams["font.family"] = "serif"
 plt.rcParams['font.serif'] = 'Computer Modern'
+plt.rcParams["xtick.direction"] = "in"
+plt.rcParams["ytick.direction"] = "in"
+plt.rcParams["xtick.minor.visible"] = True
+plt.rcParams["ytick.minor.visible"] = True
+plt.rcParams["xtick.top"] = True
+plt.rcParams["ytick.right"] = True
 
-def get_field_files(field, dataset="MUSE-DEEP"):
+def get_field_files(field, dataset="MUSE"):
     """ Returns the names of the image and cube associated with a given
     field. """
     if dataset == "MUSE-DEEP":
@@ -59,7 +66,11 @@ def get_field_files(field, dataset="MUSE-DEEP"):
             cube = "ADP.2017-03-27T12:49:43.635.fits"
         return os.path.join(wdir, img), os.path.join(wdir, cube)
     elif dataset=="MUSE":
-        raise(NotImplementedError)
+        wdir = os.path.join(data_dir, "MUSE", "combined", field)
+        img = os.path.join(wdir, "NGC3311_{}_IMAGE_COMBINED.fits".format(field))
+        cube = os.path.join(wdir, "NGC3311_{}_DATACUBE_COMBINED.fits".format(
+            field))
+        return img, cube
     else:
         raise ValueError("Data set name not defined: {}".format(dataset))
 
