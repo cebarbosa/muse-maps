@@ -21,6 +21,8 @@ from photutils.isophote import Ellipse
 from photutils.isophote import EllipseGeometry, build_ellipse_model
 
 import context
+from misc import array_from_header
+from muse_resolution import broad2res, get_muse_fwhm
 
 def make_masked_img(img, maskfile=None):
     """ Read image and produces a masked array. """
@@ -147,6 +149,7 @@ def combine_spectra(cubename, binning, redo=False):
     vordata = fits.getdata(binning)
     vordata = np.ma.array(vordata, mask=np.isnan(vordata))
     bins = np.unique(vordata)[:-1]
+    wave = array_from_header(cubename)
     for j, bin in enumerate(bins):
         idx, idy = np.where(vordata == bin)
         ncombine = len(idx)
@@ -156,11 +159,40 @@ def combine_spectra(cubename, binning, redo=False):
             continue
         errs = np.sqrt(np.nanmean(variance[:,idx,idy], axis=1))
         combined = np.nanmean(data[:,idx,idy], axis=1)
-        hdu = fits.PrimaryHDU(combined, hnew)
-        hdu2 = fits.ImageHDU(errs, hnew)
-        hdulist = fits.HDUList([hdu, hdu2])
-        hdulist.writeto(output, overwrite=True)
+        table = Table([wave, combined, errs], names=["wave", "flux", "fluxerr"])
+        table.write(output, overwrite=True)
     return
+
+def homogeneize_spectra_resolution(res=2.95, dataset="MUSE"):
+    """ Homogeneize the spectra resolution to a common FWHM. """
+    for field in context.fields:
+        print(field)
+        input_dir = os.path.join(context.data_dir, dataset, "combined", field,
+                                 "spec1d_ellipv0")
+        if not os.path.exists(input_dir):
+            continue
+        output_dir = os.path.join(context.data_dir, dataset, "combined", field,
+                                 "spec1d_ellipv0_fwhm{}".format(res))
+        if not(os.path.exists(output_dir)):
+            os.mkdir(output_dir)
+        specs = sorted([_ for _ in os.listdir(input_dir) if _.endswith(
+                        ".fits")])
+        for i, filename in enumerate(specs):
+            print("Convolving file {} ({} / {})".format(filename, i+1,
+                                                        len(specs)))
+            filepath = os.path.join(input_dir, filename)
+            output = os.path.join(output_dir, filename)
+            data = Table.read(filepath, format="fits")
+            wave = data["wave"]
+            flux = data["flux"]
+            fluxerr = data["fluxerr"]
+            muse_fwhm = get_muse_fwhm()
+            obsres = muse_fwhm(wave)
+            newflux, newfluxerr = broad2res(wave, flux, obsres,
+                                            res, fluxerr=fluxerr)
+            newtable = Table([wave, newflux, newfluxerr],
+                             names=["wave", "flux", "fluxerr"])
+            newtable.write(output, overwrite=True)
 
 if __name__ == "__main__":
     img, cube = context.get_field_files(context.fields[0])
@@ -168,4 +200,5 @@ if __name__ == "__main__":
     os.chdir(wdir)
     run_ellipse(img, redo=False)
     make_binning(img)
-    combine_spectra(cube, "ellipse_binning_v0.fits")
+    combine_spectra(cube, "ellipse_binning_v0.fits", redo=False)
+    homogeneize_spectra_resolution(res=2.95, dataset="MUSE")

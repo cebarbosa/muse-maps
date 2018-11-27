@@ -16,12 +16,12 @@ from datetime import datetime
 
 import numpy as np
 import astropy.units as u
-from astropy.table import Table
+from astropy.table import Table, hstack
 from astropy.io import fits
 
 from specutils.io import read_fits
 
-import ppxf.ppxf_util as util
+import ppxf_util as util
 
 import context
 from muse_resolution import broad2res
@@ -153,6 +153,7 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     newflux, logLam, velscale = util.log_rebin(wrange, flux,
                                                velscale=velscale)
     ssps = np.zeros((dim, len(logLam)))
+    norms = np.zeros(dim)
     # Iterate over all models
     newfolder = os.path.join(context.home, "templates", \
                              "vel{}_w{}_{}".format(velscale, w1, w2))
@@ -182,32 +183,22 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
         print("Processing SSP {}".format(i+1))
         filename = os.path.join(newfolder, emiles.get_filename(*args))
         data = fits.getdata(filename)
-        ssps[i] = data
+        norm = np.median(data)
+        ssps[i] = data / norm
         params[i] = args
-    # Second part : emission line templates
-    emlines = context.get_emission_lines()
-    sigma = fwhm / (2. * np.sqrt(2. * np.log(2.)))
-    wave = np.exp(logLam)
-    emission= np.zeros((len(emlines), len(logLam)))
-    for i, eml in enumerate(emlines):
-        print("Processing emission line {}".format(i+1))
-        lname, lwave = eml
-        emission[i] = np.exp(-(wave - lwave) ** 2 / (2 * sigma * sigma))
+        norms[i] = norm
     hdu1 = fits.PrimaryHDU(ssps)
     hdu1.header["EXTNAME"] = "SSPS"
-    hdu2 = fits.ImageHDU(emission)
-    hdu2.header["EXTNAME"] = "EMISSION_LINES"
     params = Table(params, names=["alpha", "[Z/H]", "age", "[alpha/Fe]",
                                   "[Na/Fe]"])
+    norms = Table([norms], names=["norm"])
+    params = hstack((params, norms))
     hdu3 = fits.BinTableHDU(params)
     hdu3.header["EXTNAME"] = "PARAMS"
-    hdu1.header["CRVAL1"] = logLam[0]
-    hdu1.header["CD1_1"] = logLam[1] - logLam[0]
-    hdu1.header["CRPIX1"] = 1.
     # Making wavelength array
     hdu4 = fits.BinTableHDU(Table([logLam], names=["loglam"]))
     hdu4.header["EXTNAME"] = "LOGLAM"
-    hdulist = fits.HDUList([hdu1, hdu2, hdu3, hdu4])
+    hdulist = fits.HDUList([hdu1, hdu3, hdu4])
     hdulist.writeto(output, overwrite=True)
     return
 
@@ -216,7 +207,7 @@ def prepare_muse():
     w2 = 10000
     velscale = 30  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="bsf",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="test",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))

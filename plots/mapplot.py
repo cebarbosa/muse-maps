@@ -17,18 +17,17 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Rectangle
 import scipy.ndimage as ndimage
-from matplotlib.backends.backend_pdf import PdfPages
-import brewer2mpl
 
 import context
-from geomfov import calc_extent, offset_extent
+from geomfov import calc_extent, offset_extent, get_geom
 
 class PlotVoronoiMaps():
-    def __init__ (self, tables, columns, labels=None, lims=None,
+    def __init__ (self, tables, columns, outdir, labels=None, lims=None,
                   cmaps=None, cb_fmts=None, targetSN=70, fields=None,
-                  dataset="MUSE-DEEP"):
+                  dataset="MUSE"):
         self.tables = tables
         self.columns = columns
+        self.outdir = outdir
         self.labels = self.columns if labels is None else labels
         self.lims = lims
         if self.lims is None:
@@ -43,7 +42,7 @@ class PlotVoronoiMaps():
         self.fields = context.fields if fields is None else fields
         self.dataset = dataset
 
-    def plot(self, xylims=None, cbbox="regular", figsize=(3.54, 4.2),
+    def plot(self, xylims=None, cbbox="regular", figsize=(3.54, 4),
              arrows=True, sigma=None):
         """ Make the plots. """
         sigma_str = "" if sigma is None else "_sigma{}".format(sigma)
@@ -55,15 +54,16 @@ class PlotVoronoiMaps():
             gs = gridspec.GridSpec(1,1)
             gs.update(left=0.13, right=0.98, bottom = 0.1, top=0.98)
             ax = plt.subplot(gs[0])
-            ax.set_facecolor('0.9')
+            ax.set_facecolor('1')
             plt.minorticks_on()
             self.make_contours(alpha=0.5)
-            for i, (field, table) in enumerate(zip(self.fields, self.tables)[
-                                            ::-1]):
+            kmaps = []
+            for i, (field, table) in enumerate(zip(self.fields, self.tables)):
                 binsfile = os.path.join(context.data_dir, self.dataset,
-                           field, "voronoi2d_sn{}.fits".format(self.targetSN))
+                                        "combined", field,
+                                    "voronoi2d_sn{}.fits".format(self.targetSN))
                 bins = table["BIN"].astype(np.float)
-                vector = table[col]
+                vector = table[col].astype(np.float)
                 image = context.get_field_files(field)[0]
                 extent = calc_extent(image)
                 extent = offset_extent(extent, field)
@@ -75,8 +75,14 @@ class PlotVoronoiMaps():
                         continue
                     idx = np.where(binimg == bin)
                     kmap[idx] = v
+                kmaps.append(kmap)
+            automin = np.nanmin(np.array(kmaps))
+            automax = np.nanmax(np.array(kmaps))
+            vmin = self.lims[j][0] if self.lims[j][0] is not None else automin
+            vmax = self.lims[j][1] if self.lims[j][1] is not None else automax
+            for i in range(len(self.fields)):
                 m = plt.imshow(kmap, origin="bottom", cmap=self.cmaps[j],
-                               vmin=self.lims[j][0], vmax=self.lims[j][1],
+                               vmin=vmin, vmax=vmax,
                                extent=extent,
                                aspect="equal", alpha=1)
             plt.xlim(*xylims[0])
@@ -98,16 +104,33 @@ class PlotVoronoiMaps():
                 plt.gca().add_patch(Rectangle((x0 + 0.05 * xsize, y0 + 0.22 * ysize),
                                               0.25 * xsize, 0.48 * ysize,
                                               alpha=1, zorder=10, color="w"))
-            if cbbox == "regular":
+                self.draw_colorbar(fig, ax, m, orientation="vertical",
+                                   cbar_pos=[0.24, 0.365, 0.05, 0.3],
+                                   ticks=np.linspace(vmin, vmax, 5),
+                                   cblabel=self.labels[j],
+                                   cb_fmt=self.cb_fmts[j])
+            elif cbbox == "regular":
                 plt.gca().add_patch(Rectangle((14, -13), 9.5, 18, alpha=1,
                                               zorder=10,
                                               color="w"))
-            self.draw_colorbar(fig, ax, m, orientation="vertical",
-                          cbar_pos=[0.24, 0.365, 0.05, 0.3],
-                          ticks=np.linspace(self.lims[j][0],self.lims[j][1],5),
-                          cblabel=self.labels[j], cb_fmt=self.cb_fmts[j])
-            output = os.path.join(context.home, "plots/lick/{"
-                                                "}{}.png".format(col, sigma_str))
+                self.draw_colorbar(fig, ax, m, orientation="vertical",
+                                   cbar_pos=[0.24, 0.365, 0.05, 0.3],
+                                   ticks=np.linspace(vmin, vmax, 5),
+                                   cblabel=self.labels[j],
+                                   cb_fmt=self.cb_fmts[j])
+            elif cbbox == "horizontal":
+                plt.gca().add_patch(Rectangle((-9.5, -12), 7.5, 4.5, alpha=1,
+                                              zorder=10,
+                                              color="w"))
+                self.draw_colorbar(fig, ax, m, orientation="horizontal",
+                                   cbar_pos=[0.65, 0.2, 0.3, 0.05],
+                                   ticks=np.linspace(vmin, vmax, 5),
+                                   cblabel=self.labels[j],
+                                   cb_fmt=self.cb_fmts[j], rotation=0,
+                                   ylpos=1.2, xpos=.4)
+
+            output = os.path.join(self.outdir, "{}_sn{}.png".format(col,
+                                                                 self.targetSN))
             plt.savefig(output, dpi=250)
             plt.clf()
             plt.close()
@@ -140,7 +163,7 @@ class PlotVoronoiMaps():
     def draw_colorbar(self, fig, ax, coll, ticks=None, cblabel="",
                       cbar_pos=None, cb_fmt="%i", labelsize=9.,
                       orientation="horizontal",
-                      ylpos=0.7, xpos=-0.8):
+                      ylpos=0.5, xpos=-0.8, rotation=90):
         """ Draws the colorbar in a figure. """
         if cbar_pos is None:
             cbar_pos=[0.14, 0.13, 0.17, 0.04]
@@ -154,8 +177,24 @@ class PlotVoronoiMaps():
         cl = plt.getp(cbar.ax, 'ymajorticklabels')
         plt.setp(cl, fontsize=labelsize+2)
         ax = cbar.ax
-        ax.text(xpos,ylpos,cblabel,rotation=90)
+        ax.text(xpos,ylpos,cblabel,rotation=rotation)
         return
 
+def test_plot(targetSN=150):
+    """ Produces a test plot using the geometry table. """
+    geom = get_geom("fieldA", targetSN)
+    geomtab = os.path.join(context.data_dir, "MUSE/combined/fieldA/geom.fits")
+    geom.write(geomtab, overwrite=True)
+    tables = [geom]
+    outdir = os.path.join(context.home, "plots", "test")
+    if not os.path.exists(outdir):
+        os.mkdir(outdir)
+    cb_fmts = len(geom.colnames) * ["%i"]
+    pvm = PlotVoronoiMaps(tables, geom.colnames, outdir, targetSN=150, fields=[
+        "fieldA"], cb_fmts=cb_fmts)
+    xylims = [[10, -10], [-12.5, 10]]
+    pvm.plot(xylims=xylims, arrows=False, cbbox="horizontal")
+
+
 if __name__ == "__main__":
-    plt.style.use("seaborn-paper")
+    test_plot(targetSN=150)

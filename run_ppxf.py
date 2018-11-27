@@ -270,7 +270,6 @@ def run_ppxf(fields, w1, w2, targetSN, tempfile, velscale=None, redo=False,
             pp.save(logdir)
             # plt.show()
             plt.clf()
-
     return
 
 def make_table(fields, w1, w2, targetSN, dataset="MUSE",

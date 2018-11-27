@@ -16,6 +16,7 @@ import sys
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
+import matplotlib.pyplot as plt
 import pymc3 as pm
 
 import context
@@ -24,7 +25,7 @@ from bsf.bsf.bsf import BSF
 def fit(idx, redo=False, statmodel="nssps"):
     """ Perform the fitting in one of the spectra. """
     home_dir = os.path.join(context.home, "ssp_modeling",
-                            "fit_w4700_9100_dw2_sigma350_sn150")
+                            "fit_w4700_9100_dw4_sigma350_sn150")
     # Selecting spectrum
     data_dir = os.path.join(home_dir, "data")
     filenames = sorted(os.listdir(data_dir))
@@ -59,20 +60,18 @@ def fit(idx, redo=False, statmodel="nssps"):
     flux = data["flux"].data
     fluxerr = data["fluxerr"].data
     obswave = data["obswave"]
-    bsf = BSF(obswave, flux, templates, params=params, statmodel=statmodel,
-              reddening=False, mdegree=50, Nssps=50, fluxerr=fluxerr)
+    bsf = BSF(obswave, flux, templates, params=params,
+              reddening=False, mdegree=20, fluxerr=fluxerr)
     if not os.path.exists(dbname) or redo:
         with bsf.model:
             db = pm.backends.Text(dbname)
-            bsf.trace = pm.sample(njobs=4, nchains=4, trace=db)
-            # bsf.trace = pm.sample(50, tune=10, njobs=4, nchains=4, trace=db)
+            bsf.trace = pm.sample(njobs=4, nchains=4, trace=db,
+                                  nuts_kwargs={"target_accept": 0.9})
             df = pm.stats.summary(bsf.trace)
             df.to_csv(summary)
-    with bsf.model:
-        bsf.trace = pm.backends.text.load(dbname)
 
 if __name__ == "__main__":
     # Append job number for testing purposes
     if len(sys.argv) == 1:
         sys.argv.append("1")
-    fit(sys.argv[1], redo=True, statmodel="nssps")
+    fit(sys.argv[1], redo=False, statmodel="nssps")

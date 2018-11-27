@@ -25,6 +25,9 @@ fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
 D = 50.7 # Distance to the center of the Hydra I cluster in Mpc
 DL = 55.5# Luminosity distance
 velscale = 30. # Set velocity scale for pPXF related routines
+V = 3800 # km/s
+w1 = 4500
+w2 = 10000
 
 # Properties of the system
 ra0 = 159.178471651
