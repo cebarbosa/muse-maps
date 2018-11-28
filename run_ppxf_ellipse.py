@@ -5,7 +5,7 @@ Created on 16/11/18
 
 Author : Carlos Eduardo Barbosa
 
-Run pPXF in spectra of galaxy NGC 1316
+Run pPXF in spectra of galaxy NGC 3311 in ellipsse binning.
 
 """
 from __future__ import print_function, division
@@ -18,13 +18,12 @@ from astropy.io import fits
 from astropy import constants
 from astropy.table import Table, hstack
 import matplotlib.pyplot as plt
-from ppxf import ppxf
-import ppxf_util
-
+from ppxf import ppxf_util
+from ppxf.ppxf import ppxf
 import context
 
 def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
-             library=None, version=None):
+             library=None, version=None, redo=False):
     """ Run pPXF in all spectra. """
     velscale = context.velscale if velscale is None else velscale
     w1 = context.w1 if w1 is None else w1
@@ -65,6 +64,10 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
         for spec in specs:
             # Reading the data in the files
             name = spec.replace(".fits", "")
+            outtable = os.path.join(outdir, "{}_weights.fits".format(name))
+            if os.path.exists(outtable) and not redo:
+                continue
+            print("Processing spectrum {}".format(name))
             table = Table.read(spec)
             wave = table["wave"]
             flux = table["flux"]
@@ -126,8 +129,7 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
             pp.name = name
             # Saving the weights of the bestfit
             wtable = hstack([params[params.colnames[:-1]], weights])
-            wtable.write(os.path.join(outdir, "{}_weights.fits".format(name)),
-                         overwrite=True)
+            wtable.write(outtable, overwrite=True)
             # Saving results and plot
             save(pp, outdir)
             plt.savefig(os.path.join(outdir, "{}_ppxf.png".format(name)),
