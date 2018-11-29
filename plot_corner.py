@@ -93,6 +93,10 @@ def plot_ppxf_stpop(bin):
     plt.show()
     plt.close()
 
+def plot_bestfit(bin):
+    """ Plot """
+
+
 if __name__ == "__main__":
     ############################################################################
     # Local configuration for the code
@@ -112,3 +116,4 @@ if __name__ == "__main__":
                        _.endswith("yaml")])
         for bin in bins:
             plot_ppxf_stpop(bin)
+            plot_bestfit(bin)
