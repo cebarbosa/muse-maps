@@ -195,6 +195,5 @@ def test_plot(targetSN=150):
     xylims = [[10, -10], [-12.5, 10]]
     pvm.plot(xylims=xylims, arrows=False, cbbox="horizontal")
 
-
 if __name__ == "__main__":
     test_plot(targetSN=150)

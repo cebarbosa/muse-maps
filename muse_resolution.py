@@ -13,11 +13,9 @@ import os
 
 import numpy as np
 from astropy import units as u
-from astropy.io import fits
 from astropy.table import Table
 from scipy.interpolate import interp1d
 from scipy.ndimage.filters import gaussian_filter1d
-from specutils.io import read_fits
 
 import context
 

@@ -18,13 +18,11 @@ import numpy as np
 import astropy.units as u
 from astropy.table import Table, hstack
 from astropy.io import fits
-
-from specutils.io import read_fits
-
-import ppxf_util as util
+from ppxf import ppxf_util as util
 
 import context
 from muse_resolution import broad2res
+from misc import array_from_header
 
 class EMiles_models():
     """ Class to handle data from the EMILES SSP models. """
@@ -56,12 +54,6 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 27)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
-            elif sample == "minimal":
-                self.exponents = np.array([1.3, 1.5])
-                self.ZH = np.array([0.06, 0.15])
-                self.age = np.array([10., 14.])
-                self.alphaFe = np.array([0., 0.2])
-                self.NaFe = np.array([0., 0.3])
             elif sample == "salpeter":
                 self.exponents = np.array([1.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
@@ -70,7 +62,7 @@ class EMiles_models():
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
             if sample == "bsf":
-                self.exponents = np.array([0.3, 0.8, 1.3, 1.8, 2.3])
+                self.exponents = np.array([0.3, 0.8, 1.3, 1.8, 2.3, 2.8, 3.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
                                      0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 14)
@@ -110,10 +102,11 @@ def trim_templates(emiles, w1=4500, w2=10000, redo=False):
         newfilename = os.path.join(newpath, emiles.get_filename(*args))
         if os.path.exists(newfilename):
             continue
-        spec = read_fits.read_fits_spectrum1d(filename)
-        idx = np.where(np.logical_and(spec.dispersion > w1, spec.dispersion
+        flux = fits.getdata(filename)
+        wave = array_from_header(filename, axis=1, extension=0)
+        idx = np.where(np.logical_and(wave > w1, wave
                                       < w2))
-        tab = Table([spec.dispersion[idx] * u.AA, spec.flux[idx] * u.adu],
+        tab = Table([wave[idx] * u.AA, flux[idx] * u.adu],
                     names=["wave", "flux"])
         tab.write(newfilename, format="fits")
         print("Created file ", newfilename)
@@ -207,7 +200,7 @@ def prepare_muse():
     w2 = 10000
     velscale = 30  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="test",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample="bsf",
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))

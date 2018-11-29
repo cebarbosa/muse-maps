@@ -16,6 +16,7 @@ import yaml
 import numpy as np
 from astropy.io import fits
 from astropy import constants
+from astropy.stats import sigma_clip
 from astropy.table import Table, hstack
 import matplotlib.pyplot as plt
 from ppxf import ppxf_util
@@ -46,6 +47,8 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
     logwave_temp = Table.read(templates_file, hdu=2)["loglam"].data
     wave_temp = np.exp(logwave_temp)
     start0 = [context.V, 100., 0., 0.]
+    bounds = [[[1800., 5800.], [3., 800.], [-0.3, 0.3], [-0.3, 0.3]],
+               [[1800., 5800.], [3., 80.]]]
     for field in context.fields:
         print(field)
         wdir = os.path.join(context.data_dir, "MUSE/combined", field,
@@ -113,7 +116,7 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
                       plot=True, moments=[4,2], start=start, vsyst=dv,
                       lam=np.exp(logLam), component=components, degree=-1,
                       gas_component=gas_component, gas_names=line_names,
-                      quiet=False,  mdegree=20)
+                      quiet=False,  mdegree=20, bounds=bounds)
             # Calculating average stellar populations
             weights = Table([pp.weights[:nssps] * params["norm"]],
                             names=["mass_weight"])
@@ -127,6 +130,7 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
             pp.regul_err = regul_err
             pp.flux_norm = flux_norm
             pp.name = name
+            pp.sn = calc_sn(pp)
             # Saving the weights of the bestfit
             wtable = hstack([params[params.colnames[:-1]], weights])
             wtable.write(outtable, overwrite=True)
@@ -159,6 +163,13 @@ def make_regul_array(ssp_templates, params):
     regul_array = regul_array.reshape(regul_array.shape[0], -1)
     return regul_array, reg_dim, newparams
 
+def calc_sn(pp):
+    """ Calculates the S/N ratio of a spectra. """
+    signal = pp.galaxy - pp.gas_bestfit
+    noise = sigma_clip(signal - pp.bestfit, sigma=5)
+    sn = np.nanmedian(signal / noise)
+    return float(sn)
+
 def save(pp, outdir):
     """ Save results from pPXF into files excluding fitting arrays. """
     array_keys = ["lam", "galaxy", "noise", "bestfit", "gas_bestfit",
@@ -171,7 +182,8 @@ def save(pp, outdir):
     ppdict = {}
     save_keys = ["name", "regul", "degree", "mdegree", "reddening", "clean",
                  "ncomp", "age", "[Z/H]", "[alpha/Fe]", "alpha", "[Na/Fe]",
-                 "chi2", "nonzero_ssps", "nssps", "flux_norm", "regul_err"]
+                 "chi2", "nonzero_ssps", "nssps", "flux_norm", "regul_err",
+                 "sn"]
     # Chi2 is a astropy.unit.quantity object, we have to make it a scalar
     pp.chi2 = float(pp.chi2)
     for key in save_keys:
@@ -186,4 +198,4 @@ def save(pp, outdir):
         yaml.dump(ppdict, f, default_flow_style=False)
 
 if __name__ == "__main__":
-    run_ppxf(sample="bsf")
+    run_ppxf(sample="bsf", redo=True)
