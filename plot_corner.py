@@ -10,12 +10,15 @@ Producing corner plots for NGC 3311
 from __future__ import print_function, division
 
 import os
+import yaml
 
 import numpy as np
 from astropy.table import Table
+import astropy.units as u
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib import cm
+from spectres import spectres
 
 import context
 
@@ -94,21 +97,44 @@ def plot_ppxf_stpop(bin):
     plt.close()
 
 def plot_bestfit(bin):
-    """ Plot """
+    """ Plot best fit. """
+    table = Table.read("{}_bestfit.fits".format(bin))
+    values = yaml.load(open("{}.yaml".format(bin)))
+    wave = table["lam"].data
+    norm = values["flux_norm"] * np.power(10., -20) * u.Unit("erg/s/cm/cm/AA")
+    flux = table["galaxy"].data * norm
+    error = table["noise"].data * norm
+    bestfit = table["bestfit"].data * norm
+    gas = table["gas_bestfit"].data * norm
+    newwave = np.arange(np.ceil(wave[1]), np.floor(wave[-1]))
+    newflux = spectres(newwave, wave, np.atleast_2d(flux))[0]
+    newbestfit =  spectres(newwave, wave, np.atleast_2d(bestfit))[0]
+    print(np.nanmedian(flux / np.nanstd(flux - bestfit)))
+    print(np.nanmedian(newflux / np.nanstd(newflux - newbestfit)))
+    #
+    gs = gridspec.GridSpec(3,1)
+    ax1 = plt.subplot(gs[:2,:])
+    ax1.fill_between(wave, flux + error - gas, flux - error - gas, lw=2)
+    ax1.plot(wave, bestfit - gas, c="C1", ls="-")
+    ax2 = plt.subplot(gs[2:,:])
+    ax2.fill_between(wave, (flux + error - bestfit), (flux - error - bestfit))
+
+    plt.show()
 
 
 if __name__ == "__main__":
     ############################################################################
     # Local configuration for the code
-    version = 0
+    targetSN = 250
     velscale = context.velscale
-    library = "miles"
+    w1 = 4500
+    w2 = 10000
     sample = "bsf"
     ############################################################################
     for field in context.fields:
         wdir = os.path.join(context.data_dir, "MUSE/combined", field,
-            "ppxf_ellipv{}_vel{}_{}_{}".format(version, velscale, library,
-                                                      sample))
+                            "spec1d_FWHM2.95_sn{}".format(targetSN),
+            "ppxf_vel{}_w{}_{}_{}".format(int(velscale), w1, w2, sample))
         if not os.path.exists(wdir):
             continue
         os.chdir(wdir)
@@ -117,3 +143,4 @@ if __name__ == "__main__":
         for bin in bins:
             plot_ppxf_stpop(bin)
             plot_bestfit(bin)
+        break
