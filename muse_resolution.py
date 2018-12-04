@@ -106,9 +106,9 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
     for field in fields:
         print(field)
         input_dir = os.path.join(context.data_dir, dataset, "combined", field,
-                                 "specs_sn{}".format(targetSN))
+                                 "spec1d_sn{}".format(targetSN))
         output_dir = os.path.join(context.data_dir, dataset, "combined", field,
-                                  "specs_FWHM{}_sn{}".format(res, targetSN))
+                                  "spec1d_FWHM{}_sn{}".format(res, targetSN))
         if not(os.path.exists(output_dir)):
             os.mkdir(output_dir)
         specs = sorted([_ for _ in os.listdir(input_dir) if _.endswith(
@@ -119,12 +119,12 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
             filepath = os.path.join(input_dir, filename)
             output = os.path.join(output_dir, filename)
             data = Table.read(filepath, format="fits")
-            wave = data["WAVE"]
-            flux = data["FLUX"]
-            fluxerr = data["FLUXERR"]
+            wave = data["wave"]
+            flux = data["flux"]
+            fluxerr = data["fluxerr"]
             muse_fwhm = get_muse_fwhm()
             obsres = muse_fwhm(wave)
-            newflux, newfluxerr = broad2res(wave.to("AA").value, flux, obsres,
+            newflux, newfluxerr = broad2res(wave, flux, obsres,
                                             res, fluxerr=fluxerr)
             newtable = Table([wave, newflux, newfluxerr],
                              names=["wave", "flux", "fluxerr"])
@@ -134,4 +134,4 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
 if __name__ == "__main__":
     # plot_muse_fwhm()
     # plot_vel_resolution()
-    broad_binned(context.fields[:1], 2.95, targetSN=150)
+    broad_binned(context.fields[:1], 2.95, targetSN=300)
