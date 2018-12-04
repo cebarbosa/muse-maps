@@ -15,7 +15,6 @@ import os
 import numpy as np
 from astropy.io import fits, ascii
 from astropy.table import Table
-from specutils.io import read_fits
 
 from voronoi.voronoi_2d_binning import voronoi_2d_binning
 
@@ -58,10 +57,10 @@ def collapse_cube(cubename, outfile, redo=False, wmin=5590, wmax=5680):
         del h[key]
     print("Starting collapsing process...")
     newdata = np.nanmean(data[idx,:,:], axis=0)
-    # noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
-    #        np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
-    #        axis=0)
-    noise = np.nanmean(np.sqrt(var[idx,:,:]), axis=0)
+    noise = 1.482602 / np.sqrt(6.) * np.nanmedian(np.abs(2.* data - \
+           np.roll(data, 2, axis=0) - np.roll(data, -2, axis=0)), \
+           axis=0)
+    # noise = np.nanmean(np.sqrt(var[idx,:,:]), axis=0)
     hdu0 = fits.PrimaryHDU()
     hdu0.header = h0
     hdu = fits.ImageHDU(newdata, h)
@@ -136,7 +135,7 @@ def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
         try:
             binNum, xNode, yNode, xBar, yBar, sn, nPixels, \
             scale = voronoi_2d_binning(x, y, s, n, targetSN, plot=0,
-                                       quiet=0, pixelsize=1, cvt=True)
+                                       quiet=0, pixelsize=1, cvt=False)
             binNum += 1
         except ValueError:
             binNum = np.ones_like(x)
@@ -228,19 +227,8 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
         os.mkdir(outdir)
     data = fits.getdata(cubename, 1)
     variance = np.sqrt(fits.getdata(cubename, 2))
-    h = fits.getheader(cubename, 1)
-    ############################################################################
-    # Preparing header for output
-    hnew = fits.Header()
-    hnew["NAXIS"] = 1
-    kws = ["CRVAL1", "CD1_1", "CRPIX1", 'CUNIT1', "CTYPE1", "NAXIS1",
-           "SIMPLE", "BITPIX", "EXTEND"]
-    for kw in kws:
-        if kw in h.keys():
-            hnew[kw] = h[kw.replace("1", "3")]
-    ##########################################################################
-    zdim, ydim, xdim = data.shape
-    h["NAXIS1"] = zdim
+    wave = array_from_header(cubename)
+    print(wave)
     vordata = fits.getdata(voronoi2D)
     vordata = np.ma.array(vordata, mask=np.isnan(vordata))
     bins = np.unique(vordata)[:-1]
@@ -254,27 +242,9 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
             continue
         errs = np.sqrt(np.nanmean(variance[:,idx,idy], axis=1))
         combined = np.nanmean(data[:,idx,idy], axis=1)
-        hdu = fits.PrimaryHDU(combined, hnew)
-        hdu2 = fits.ImageHDU(errs, hnew)
-        hdulist = fits.HDUList([hdu, hdu2])
-        hdulist.writeto(output, overwrite=True)
+        table = Table([wave, combined, errs], names=["wave", "flux", "fluxerr"])
+        table.write(output, overwrite=True)
     return
-
-def make_bin_table(targetSN):
-    """ Include keywords in the header preparing to use molecfit. """
-    indir = os.path.join(os.getcwd(), "spec1d_sn{}".format(targetSN))
-    outdir = os.path.join(os.getcwd(), "specs_sn{}".format(targetSN))
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
-    for f in sorted(os.listdir(indir)):
-        filename = os.path.join(indir, f)
-        spec = read_fits.read_fits_spectrum1d(filename)
-        hdulist = fits.open(filename)
-        data = hdulist[0].data
-        error = hdulist[1].data
-        table = Table([spec.wavelength, data, error],
-                      names=["WAVE", "FLUX", "FLUXERR"])
-        table.write(os.path.join(outdir, f), format="fits", overwrite=True)
 
 def run_MUSE_DEEP(fields, targetSN=70):
     """ Pipeline to run Voronoi on MUSE-DEEP data"""
@@ -293,9 +263,8 @@ def run_MUSE_DEEP(fields, targetSN=70):
         geom = calc_geom(voronoi2D, imgname)
         voronoi2D = sort_voronoi2D(voronoi2D, imgname)
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
-        make_bin_table(targetSN)
 
-def run_MUSE(fields=None, targetSN=150):
+def run_MUSE(fields=None, targetSN=250):
     """ Run pipeline using MUSE data. """
     wdir = os.path.join(context.data_dir, "MUSE/combined")
     for field in fields:
@@ -306,11 +275,10 @@ def run_MUSE(fields=None, targetSN=150):
         signal = fits.getdata(imgname, 1)
         noise = fits.getdata(imgname, 2)
         mask = fits.getdata("simple_binning.fits")
-        bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
-        voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=False)
+        bintable = calc_binning(signal, noise, mask, targetSN, redo=True)
+        voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=True)
         voronoi2D = sort_voronoi2D(voronoi2D, imgname)
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=True)
-        make_bin_table(targetSN)
 
 
 if __name__ == '__main__':
