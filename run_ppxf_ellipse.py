@@ -21,6 +21,7 @@ from astropy.table import Table, hstack
 import matplotlib.pyplot as plt
 from ppxf import ppxf_util
 from ppxf.ppxf import ppxf
+
 import context
 
 def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
