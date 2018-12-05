@@ -12,6 +12,7 @@ from __future__ import print_function, division
 
 import os
 import pickle
+import yaml
 
 import numpy as np
 import astropy.units as u
@@ -20,78 +21,46 @@ from astropy.io import fits
 from scipy.ndimage.filters import gaussian_filter1d
 import matplotlib.pyplot as plt
 from astropy.table import Table, hstack
-import pymc3 as pm
 
 from spectres import spectres
 
 import context
-from run_ppxf import pPXF
 from misc import array_from_header
 
-from bsf.bsf.bsf import BSF
-
-def prepare_spectra(outw1, outw2, dw, outdir, dataset="MUSE", redo=False,
-                velscale=None, sigma=350, targetSN=150):
+def prepare_spectra(table, wfit, outdir):
     """ Prepare spectra for CSP modeling """
-    velscale = context.velscale if velscale is None else velscale
-    w1 = 4500
-    w2 = 10000
-    wnorm = 5635
-    dnorm = 40
-    w0resamp = np.arange(outw1, outw2, dw)
-    for field in context.fields:
-        wdir = os.path.join(context.data_dir, dataset, "combined", field)
-        data_dir = os.path.join(wdir, "ppxf_vel{}_w{}_{}_sn{}".format(int(
-            velscale), w1, w2, targetSN))
-        if not os.path.exists(data_dir):
-            continue
-        pkls = sorted([_ for _ in os.listdir(data_dir) if _.endswith(".pkl")])
-        for j, pkl in enumerate(pkls):
-            outfile = os.path.join(outdir, pkl.replace(".pkl", ".fits"))
-            if os.path.exists(outfile) and not redo:
-                continue
-            print("Preparing input spectra {} ({}/{})".format(pkl, j + 1,
-                                                          len(pkls)))
-            ####################################################################
-            # Reading data from pPXF fitting
-            with open(os.path.join(data_dir, pkl), "rb") as f:
-                pp = pickle.load(f)
-            ####################################################################
-            # Subtracting emission lines
-            wave = pp.table["wave"]
-            idx_norm = np.where(np.logical_and(wave > wnorm - dnorm,
-                                               wave < wnorm + dnorm))[0]
-            flux = pp.table["flux"] - pp.table["emission"]
-            norm = np.median(flux[idx_norm])
-            fluxerr = pp.table["noise"]
-
-            # Convolve spectrum to given sigma
-            losvd = pp.sol[0]
-            z = losvd[0] * u.km / u.s / constants.c
-            if losvd[1] > sigma:
-                continue
-            sigma_diff = np.sqrt(sigma ** 2 - losvd[1] ** 2) / pp.velscale
-            flux = gaussian_filter1d(flux, sigma_diff, mode="constant",
-                                     cval=0.0)
-            errdiag = np.diag(fluxerr)
-            for j in range(len(wave)):
-                errdiag[j] = gaussian_filter1d(errdiag[j] ** 2, sigma_diff,
-                                               mode="constant", cval=0.0)
-            newfluxerr = np.sqrt(errdiag.sum(axis=0))
-            ####################################################################
-            # De-redshift and resample of the spectrum
-            w0 = wave / (1 + z)
-            wresamp = (1 + z) * w0resamp
-            # Resampling the spectra
-            fresamp = spectres(w0resamp, w0, flux)
-            fresamperr = spectres(w0resamp, w0, newfluxerr)
-            norm = np.full_like(fresamp, norm)
-            fresamp /= norm
-            fresamperr /= norm
-            table = Table([w0resamp, wresamp, fresamp, fresamperr, norm],
-                          names=["wave", "obswave", "flux", "fluxerr", "norm"])
-            table.write(outfile, format="fits", overwrite=True)
-            ####################################################################
+    sigma_out = 350
+    data = Table.read(table)
+    flux = data["galaxy"].data - data["gas_bestfit"].data # sky subtraction
+    fluxerr = data["noise"].data
+    wave = data["lam"].data
+    pars = yaml.load(open(table.replace("_bestfit.fits", ".yaml")))
+    v = pars["V_0"]
+    sigma = pars["sigma_0"]
+    # Convolve spectrum to given sigma
+    z = v * u.km / u.s / constants.c
+    if sigma > sigma_out:
+        return
+    sigma_diff = np.sqrt(sigma_out ** 2 - sigma ** 2) / context.velscale
+    flux = gaussian_filter1d(flux, sigma_diff, mode="constant", cval=0.0)
+    errdiag = np.diag(fluxerr)
+    for j in range(len(wave)):
+        errdiag[j] = gaussian_filter1d(errdiag[j] ** 2, sigma_diff,
+                                       mode="constant", cval=0.0)
+    newfluxerr = np.sqrt(errdiag.sum(axis=0))
+    ###########################################################################
+    # De-redshift and resample of the spectrum
+    w0 = wave / (1 + z)
+    # Resampling the spectra
+    fresamp = spectres(wfit, w0, flux)
+    fresamperr = spectres(wfit, w0, newfluxerr)
+    w = wfit * (1 + z)
+    outtable = Table([wfit, w, fresamp, fresamperr],
+                  names=["wave", "obswave", "flux", "fluxerr"])
+    output = os.path.join(outdir,
+                          os.path.split(table)[1].replace("_bestfit", ""))
+    outtable.write(output, format="fits", overwrite=True)
+    ############################################################################
 
 def prepare_templates(outw1, outw2, dw, outdir, sigma=350, redo=False,
                       velscale=None,
@@ -249,28 +218,57 @@ def make_corner_plot(trace, params):
             # ax.contour(y.T, x.T, w, colors="k")
     plt.show()
 
-def run(redo=True):
-    # Parameters for the resampling
-    outw1 = 4700
+def prepare_bsf_voronoi(redo=True):
+    """ Prepare the modeling of data using Voronoi binning"""
+    ############################################################################
+    # Input parameters
+    w1 = context.w1
+    w2 = context.w2
+    velscale = context.velscale
+    sample = "bsf"
+    targetSN = 250
+    dataset = "MUSE"
+    ############################################################################
+    # BSF parameters
+    outw1 = 4800
     outw2 = 9100
     dw = 4
-    sample = "bsf"
+    wfit = np.arange(outw1, outw2, dw)
     sigma = 350 # km / s
-    targetSN = 150
+    outroot = os.path.join(context.data_dir, dataset, "bsf")
+    if not os.path.exists(outroot):
+        os.mkdir(outroot)
+    # Preparing the data
+    outdir_data = os.path.join(outroot, "data")
+    if not os.path.exists(outdir_data):
+        os.mkdir(outdir_data)
+    for field in context.fields:
+        data_dir = os.path.join(context.data_dir, dataset, "combined", field,
+                  "spec1d_FWHM2.95_sn{}".format(targetSN),
+                  "ppxf_vel{}_w{}_{}_{}".format(int(velscale), w1, w2, sample))
+        if not os.path.exists(data_dir):
+            continue
+        tables = sorted([_ for _ in os.listdir(data_dir) if _.endswith(
+                         "bestfit.fits")])
+        for table in tables:
+            print("Processing file {}".format(table))
+            prepare_spectra(os.path.join(data_dir, table), wfit, outdir_data)
+    input(404)
+
     # Setting unique name for particular modeling
-    fitname = "fit_w{}_{}_dw{}_sigma{}_sn{}".format(outw1, outw2, dw, sigma,
+    fitname = "ngc3311_w{}_{}_dw{}_sigma{}_sn{}".format(outw1, outw2, dw, sigma,
                                                     targetSN)
-    outdir = os.path.join(context.home, "ssp_modeling", fitname)
-    if not os.path.exists(outdir):
-        os.mkdir(outdir)
+    outroot = os.path.join(context.home, "bsf", fitname)
+    if not os.path.exists(outroot):
+        os.mkdir(outroot)
     # Setting the directory where the data is going to be saved
-    data_dir = os.path.join(outdir, "data")
+    data_dir = os.path.join(outroot, "data")
     if not os.path.exists(data_dir):
         os.mkdir(data_dir)
     prepare_spectra(outw1, outw2, dw, data_dir, redo=redo, sigma=sigma,
                     targetSN=targetSN)
     # Setting templates
-    templates_dir = os.path.join(outdir, "templates")
+    templates_dir = os.path.join(outroot, "templates")
     if not os.path.exists(templates_dir):
         os.mkdir(templates_dir)
     wave, params, templates = prepare_templates(outw1, outw2, dw,
@@ -278,4 +276,4 @@ def run(redo=True):
                                                 sample=sample, sigma=sigma)
 
 if __name__ == "__main__":
-    run(redo=True)
+    prepare_bsf_voronoi(redo=True)
