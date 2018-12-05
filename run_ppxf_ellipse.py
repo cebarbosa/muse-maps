@@ -23,6 +23,7 @@ from ppxf import ppxf_util
 from ppxf.ppxf import ppxf
 
 import context
+from misc import snr
 
 def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
              library=None, version=None, redo=False):
@@ -131,7 +132,7 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
             pp.regul_err = regul_err
             pp.flux_norm = flux_norm
             pp.name = name
-            pp.sn = calc_sn(pp)
+            pp.sn = float(snr(pp.galaxy))
             # Saving the weights of the bestfit
             wtable = hstack([params[params.colnames[:-1]], weights])
             wtable.write(outtable, overwrite=True)
@@ -163,13 +164,6 @@ def make_regul_array(ssp_templates, params):
     reg_dim = regul_array.shape[1:]
     regul_array = regul_array.reshape(regul_array.shape[0], -1)
     return regul_array, reg_dim, newparams
-
-def calc_sn(pp):
-    """ Calculates the S/N ratio of a spectra. """
-    signal = pp.galaxy - pp.gas_bestfit
-    noise = sigma_clip(signal - pp.bestfit, sigma=5)
-    sn = np.nanmedian(signal / noise)
-    return float(sn)
 
 def save(pp, outdir):
     """ Save results from pPXF into files excluding fitting arrays. """
