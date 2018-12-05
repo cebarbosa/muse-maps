@@ -27,7 +27,6 @@ def plot_ppxf_stpop(bin):
     table_file = "{}_weights.fits".format(bin)
     table = Table.read(table_file)
     cols = table.colnames[:-1]
-    print(cols)
     pars = [np.unique(table[col].data) for col in cols]
     shape = tuple([len(p) for p in pars])
     weights3D = np.zeros(shape)
@@ -109,16 +108,14 @@ def plot_bestfit(bin):
     newwave = np.arange(np.ceil(wave[1]), np.floor(wave[-1]))
     newflux = spectres(newwave, wave, np.atleast_2d(flux))[0]
     newbestfit =  spectres(newwave, wave, np.atleast_2d(bestfit))[0]
-    print(np.nanmedian(flux / np.nanstd(flux - bestfit)))
-    print(np.nanmedian(newflux / np.nanstd(newflux - newbestfit)))
-    #
     gs = gridspec.GridSpec(3,1)
     ax1 = plt.subplot(gs[:2,:])
     ax1.fill_between(wave, flux + error - gas, flux - error - gas, lw=2)
     ax1.plot(wave, bestfit - gas, c="C1", ls="-")
     ax2 = plt.subplot(gs[2:,:])
-    ax2.fill_between(wave, (flux + error - bestfit), (flux - error - bestfit))
-
+    ax2.fill_between(wave, (flux + error - bestfit) / bestfit, (flux - error -
+                                                         bestfit)/bestfit)
+    ax2.set_ylim(-0.05, 0.05)
     plt.show()
 
 
@@ -141,6 +138,7 @@ if __name__ == "__main__":
         bins = sorted([_.replace(".yaml", "") for _ in os.listdir(".") if
                        _.endswith("yaml")])
         for bin in bins:
+            print(bin)
             plot_ppxf_stpop(bin)
             plot_bestfit(bin)
         break
