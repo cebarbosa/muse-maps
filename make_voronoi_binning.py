@@ -16,7 +16,7 @@ import numpy as np
 from astropy.io import fits, ascii
 from astropy.table import Table
 
-from voronoi.voronoi_2d_binning import voronoi_2d_binning
+from vorbin.voronoi_2d_binning import voronoi_2d_binning
 
 import context
 from geomfov import calc_geom
@@ -228,7 +228,6 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
     data = fits.getdata(cubename, 1)
     variance = np.sqrt(fits.getdata(cubename, 2))
     wave = array_from_header(cubename)
-    print(wave)
     vordata = fits.getdata(voronoi2D)
     vordata = np.ma.array(vordata, mask=np.isnan(vordata))
     bins = np.unique(vordata)[:-1]
@@ -246,40 +245,20 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
         table.write(output, overwrite=True)
     return
 
-def run_MUSE_DEEP(fields, targetSN=70):
-    """ Pipeline to run Voronoi on MUSE-DEEP data"""
+if __name__ == '__main__':
+    fields = ["fieldA"]
     dataset = "MUSE-DEEP"
+    targetSN = 150
     for field in fields:
-        print(field)
-        os.chdir(os.path.join(context.data_dir, dataset, field))
-        imgname, cubename = context.get_field_files(field)
-        newimg = "whitelamp.fits"
-        collapse_cube(cubename, newimg, redo=False)
-        signal = fits.getdata(newimg, 0)
-        noise = fits.getdata(newimg, 1)
-        mask = fits.getdata("simple_binning.fits")
-        bintable = calc_binning(signal, noise, mask, targetSN, redo=False)
-        voronoi2D = make_voronoi_image(bintable, newimg, targetSN, redo=False)
-        geom = calc_geom(voronoi2D, imgname)
-        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
-        combine_spectra(cubename, voronoi2D, targetSN, field, redo=False)
-
-def run_MUSE(fields=None, targetSN=250):
-    """ Run pipeline using MUSE data. """
-    wdir = os.path.join(context.data_dir, "MUSE/combined")
-    for field in fields:
-        os.chdir(os.path.join(wdir, field))
-        cubename = "NGC3311_{}_DATACUBE_COMBINED.fits".format(field)
-        imgname = "NGC3311_{}_img.fits".format(field)
-        collapse_cube(cubename, imgname, redo=False)
-        signal = fits.getdata(imgname, 1)
-        noise = fits.getdata(imgname, 2)
+        imgname, cubename = context.get_field_files(field, dataset=dataset)
+        wdir = os.path.split(imgname)[0]
+        os.chdir(wdir)
+        snimg = os.path.join(wdir, "signal_noise.fits")
+        collapse_cube(cubename, snimg, redo=False)
+        signal = fits.getdata(snimg, 1)
+        noise = fits.getdata(snimg, 2)
         mask = fits.getdata("simple_binning.fits")
         bintable = calc_binning(signal, noise, mask, targetSN, redo=True)
         voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=True)
         voronoi2D = sort_voronoi2D(voronoi2D, imgname)
         combine_spectra(cubename, voronoi2D, targetSN, field, redo=True)
-
-
-if __name__ == '__main__':
-    run_MUSE(fields=["fieldA"])
