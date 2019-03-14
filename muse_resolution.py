@@ -103,11 +103,11 @@ def plot_vel_resolution():
 
 def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
     """ Performs convolution to homogeneize the resolution. """
+    wdir = context.get_data_dir(dataset)
     for field in fields:
-        print(field)
-        input_dir = os.path.join(context.data_dir, dataset, "combined", field,
+        input_dir = os.path.join(wdir, field,
                                  "spec1d_sn{}".format(targetSN))
-        output_dir = os.path.join(context.data_dir, dataset, "combined", field,
+        output_dir = os.path.join(wdir, field,
                                   "spec1d_FWHM{}_sn{}".format(res, targetSN))
         if not(os.path.exists(output_dir)):
             os.mkdir(output_dir)
@@ -134,4 +134,4 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
 if __name__ == "__main__":
     # plot_muse_fwhm()
     # plot_vel_resolution()
-    broad_binned(context.fields[:1], 2.95, targetSN=300)
+    broad_binned(context.fields[:1], 2.95, targetSN=150, dataset="MUSE-DEEP")
