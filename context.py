@@ -17,7 +17,6 @@ if getpass.getuser() == "kadu":
     home = "/home/kadu/Dropbox/hydraimf"
 else:
     home = "/sto/home/cebarbosa/hydraimf"
-data_dir = os.path.join(home, "data")
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
 
@@ -54,7 +53,7 @@ def get_field_files(field, dataset="MUSE"):
     """ Returns the names of the image and cube associated with a given
     field. """
     if dataset == "MUSE-DEEP":
-        wdir = os.path.join(data_dir, "MUSE-DEEP", field)
+        wdir = os.path.join(home, "data/MUSE-DEEP", field)
         if field == "fieldA":
             img = "ADP.2017-03-27T12:49:43.628.fits"
             cube = "ADP.2017-03-27T12:49:43.627.fits"
@@ -69,13 +68,19 @@ def get_field_files(field, dataset="MUSE"):
             cube = "ADP.2017-03-27T12:49:43.635.fits"
         return os.path.join(wdir, img), os.path.join(wdir, cube)
     elif dataset=="MUSE":
-        wdir = os.path.join(data_dir, "MUSE", "combined", field)
+        wdir = os.path.join(home, "data/MUSE", "combined", field)
         img = os.path.join(wdir, "NGC3311_{}_IMAGE_COMBINED.fits".format(field))
         cube = os.path.join(wdir, "NGC3311_{}_DATACUBE_COMBINED.fits".format(
             field))
         return img, cube
     else:
         raise ValueError("Data set name not defined: {}".format(dataset))
+
+def get_data_dir(dataset):
+    if dataset == "MUSE-DEEP":
+        return os.path.join(home, "data/MUSE-DEEP")
+    elif dataset == "MUSE":
+        return os.path.join(home, "data/MUSE/combined" )
 
 # Emission lines used in the projects
 def get_emission_lines():
