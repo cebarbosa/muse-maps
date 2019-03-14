@@ -91,7 +91,7 @@ def run_ppxf(specs, w1, w2, sample, templates_file, velscale=None, redo=False):
                   plot=True, moments=[4,2], start=start, vsyst=dv,
                   lam=np.exp(logLam), component=components, degree=-1,
                   gas_component=gas_component, gas_names=line_names,
-                  quiet=False,  mdegree=20, bounds=bounds)
+                  quiet=False, mdegree=15, bounds=bounds)
         # Calculating average stellar populations
         weights = Table([pp.weights[:nssps] * params["norm"]],
                         names=["mass_weight"])
@@ -106,7 +106,6 @@ def run_ppxf(specs, w1, w2, sample, templates_file, velscale=None, redo=False):
         pp.name = name
         pp.srn = float(np.nanmedian(pp.galaxy) / \
                       np.nanstd(pp.galaxy - pp.bestfit))
-        print("S/rN: {}".format(pp.srn))
         pp.sn = der_sn
         # Saving the weights of the bestfit
         wtable = hstack([params[params.colnames[:-1]], weights])
@@ -144,18 +143,18 @@ def save(pp, outdir):
         yaml.dump(ppdict, f, default_flow_style=False)
 
 if __name__ == '__main__':
-    targetSN = 250
+    targetSN = 150
     w1 = 4500
     w2 = 10000
     sample = "bsf"
     velscale = context.velscale
-    dataset = "MUSE/combined"
+    dataset = "MUSE-DEEP"
     tempfile = os.path.join(context.home, "templates",
                "emiles_muse_vel{}_w{}_{}_{}.fits".format(int(velscale), w1, w2,
                                                     sample))
     fields = context.fields[:1]
     for field in fields:
-        wdir = os.path.join(context.data_dir, dataset, field,
+        wdir = os.path.join(context.get_data_dir(dataset), field,
                             "spec1d_FWHM2.95_sn{}".format(targetSN))
         os.chdir(wdir)
         specs = sorted([_ for _ in os.listdir(".") if _.endswith(".fits")])
