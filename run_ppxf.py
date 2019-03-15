@@ -158,4 +158,4 @@ if __name__ == '__main__':
                             "spec1d_FWHM2.95_sn{}".format(targetSN))
         os.chdir(wdir)
         specs = sorted([_ for _ in os.listdir(".") if _.endswith(".fits")])
-        run_ppxf(specs, w1, w2, sample, tempfile, redo=True)
+        run_ppxf(specs, w1, w2, sample, tempfile, redo=False)
