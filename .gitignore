@@ -102,3 +102,7 @@ ENV/
 
 # Pycharm files
 .idea/
+
+# Other folders
+bsf/
+basket/
