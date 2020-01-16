@@ -118,7 +118,7 @@ def run_ppxf(velscale=None, w1=None, w2=None, sample=None, regul_err=None,
                       plot=True, moments=[4,2], start=start, vsyst=dv,
                       lam=np.exp(logLam), component=components, degree=-1,
                       gas_component=gas_component, gas_names=line_names,
-                      quiet=False,  mdegree=20, bounds=bounds)
+                      quiet=False,  mdegree=40, bounds=bounds)
             # Calculating average stellar populations
             weights = Table([pp.weights[:nssps] * params["norm"]],
                             names=["mass_weight"])

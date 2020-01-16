@@ -132,6 +132,6 @@ def broad_binned(fields, res, targetSN=70, dataset="MUSE"):
 
 
 if __name__ == "__main__":
-    # plot_muse_fwhm()
+    plot_muse_fwhm()
     # plot_vel_resolution()
-    broad_binned(context.fields[:1], 2.95, targetSN=150, dataset="MUSE-DEEP")
+    broad_binned(context.fields[:1], 2.95, targetSN=80, dataset="MUSE-DEEP")

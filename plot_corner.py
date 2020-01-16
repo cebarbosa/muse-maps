@@ -78,6 +78,11 @@ def plot_ppxf_stpop(bin):
                 ax = plt.subplot(gs[i, j])
                 ax.imshow(w.T, origin="bottom", aspect="auto", cmap=cmap,
                           interpolation="spline16")
+                for jj in np.arange(len(pars[j])):
+                    ax.axvline(jj, ls="--", c="w", lw=0.5)
+                for ii in np.arange(len(pars[i])):
+                    ax.axhline(ii, ls="--", c="w", lw=0.5)
+
                 plt.yticks(ticks=np.arange(len(pars[i])), labels=pars[i])
                 if j == 0:
                     ax.set_ylabel(labels[xcol])
@@ -106,17 +111,29 @@ def plot_bestfit(bin):
     bestfit = table["bestfit"].data * norm
     gas = table["gas_bestfit"].data * norm
     newwave = np.arange(np.ceil(wave[1]), np.floor(wave[-1]))
-    newflux = spectres(newwave, wave, np.atleast_2d(flux))[0]
-    newbestfit =  spectres(newwave, wave, np.atleast_2d(bestfit))[0]
+    plt.rcParams["xtick.minor.visible"] = True
+    plt.rcParams["ytick.minor.visible"] = True
+    plt.rcParams["xtick.direction"] = "in"
+    plt.rcParams["ytick.direction"] = "in"
+    label = "{0[0]} Bin {0[2]}".format(bin.replace("field", "Field ").split(
+        "_"))
     gs = gridspec.GridSpec(3,1)
     ax1 = plt.subplot(gs[:2,:])
-    ax1.fill_between(wave, flux + error - gas, flux - error - gas, lw=2)
-    ax1.plot(wave, bestfit - gas, c="C1", ls="-")
+    ax1.fill_between(wave, flux + error - gas, flux - error - gas, lw=4,
+                     label=label)
+    ax1.plot(wave, bestfit - gas, c="C1", ls="-", label="Model")
+    ax1.set_ylabel("Flux (erg s$^{{-1}}$ cm$^{{-2}}$ \\r{{A}}$^{{-1}}$)")
+    ax1.xaxis.set_ticklabels([])
+    ax1.legend()
     ax2 = plt.subplot(gs[2:,:])
-    ax2.fill_between(wave, (flux + error - bestfit) / bestfit, (flux - error -
-                                                         bestfit)/bestfit)
-    ax2.set_ylim(-0.05, 0.05)
-    plt.show()
+    ax2.fill_between(wave, 100 * (flux + error - bestfit) / bestfit,
+                     100 * (flux - error - bestfit)/bestfit)
+    ax2.set_ylim(-5, 5)
+    ax2.set_ylabel("Resid (\%)")
+    ax2.set_xlabel("Wavelength (\\r{{A}})")
+    ax2.axhline(y=0, ls="--", c="k", lw=1)
+    plt.savefig("{}_fit.png".format(bin), dpi=250)
+    plt.clf()
 
 
 if __name__ == "__main__":
@@ -139,6 +156,6 @@ if __name__ == "__main__":
                        _.endswith("yaml")])
         for bin in bins:
             print(bin)
-            plot_ppxf_stpop(bin)
+            # plot_ppxf_stpop(bin)
             plot_bestfit(bin)
         break
