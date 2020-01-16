@@ -12,11 +12,22 @@ import os
 import getpass
 
 import matplotlib.pyplot as plt
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+from dustmaps.config import config
+from dustmaps import sfd
 
 if getpass.getuser() == "kadu":
     home = "/home/kadu/Dropbox/hydraimf"
 else:
     home = "/sto/home/cebarbosa/hydraimf"
+
+data_dir = os.path.join(home, "data")
+
+config['data_dir'] = os.path.join(data_dir, "dustmaps")
+if not os.path.exists(config["data_dir"]): # Just to run once in my example
+    sfd.fetch() # Specific for Schlafy and Finkbeiner (2011), which is an
+    # updated version of the popular Schlegel, Finkbeiner & Davis (1998) maps
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
 
@@ -29,8 +40,15 @@ w1 = 4500
 w2 = 10000
 
 # Properties of the system
-ra0 = 159.178471651
-dec0 = -27.5281283035
+ra0 = 159.178471651 * u.degree
+dec0 = -27.5281283035 * u.degree
+
+# Get color excess
+coords = SkyCoord(ra0, dec0)
+sfq = sfd.SFDQuery()
+ebv = sfq(coords)
+Rv = 3.1  # Constant in our galaxy
+Av = ebv * Rv
 
 # VHELIO - radial velocities of the fields, have to be added from the
 # observed velocities.
