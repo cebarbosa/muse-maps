@@ -123,8 +123,8 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     """ Pipeline for the preparation of the templates."""
     instrument = "muse" if instrument is None else instrument
     output = os.path.join(context.home, "templates",
-            "emiles_{}_vel{}_w{}_{}_{}.fits".format(instrument, velscale, w1,
-                                                    w2, sample))
+            "emiles_{}_vel{}_w{}_{}_{}_fwhm{}.fits".format(instrument, velscale,
+                                                        w1, w2, sample, fwhm))
     if os.path.exists(output) and not redo:
         return
     fwhm = 2.95 if fwhm is None else fwhm
@@ -154,7 +154,8 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     ssps = np.zeros((dim, len(logLam)))
     # Iterate over all models
     newfolder = os.path.join(context.home, "templates", \
-                             "vel{}_w{}_{}".format(velscale, w1, w2))
+                             "vel{}_w{}_{}_fwhm{}".format(velscale, w1, w2,
+                                                          fwhm))
     if not os.path.exists(newfolder):
         os.mkdir(newfolder)
     ############################################################################
@@ -201,12 +202,12 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     hdulist.writeto(output, overwrite=True)
     return
 
-def prepare_muse(sample="bsf"):
+def prepare_muse(sample="test"):
     w1 = 4500
     w2 = 10000
     velscale = 50  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample=sample,
+    prepare_templates_emiles_muse(w1, w2, velscale, sample=sample, fwhm=2.5,
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
