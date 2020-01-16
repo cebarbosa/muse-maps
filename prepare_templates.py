@@ -16,9 +16,10 @@ from datetime import datetime
 
 import numpy as np
 import astropy.units as u
-from astropy.table import Table, hstack
+from astropy.table import Table
 from astropy.io import fits
-from ppxf import ppxf_util as util
+import ppxf.ppxf_util as util
+from tqdm import tqdm
 
 import context
 from muse_resolution import broad2res
@@ -34,7 +35,7 @@ class EMiles_models():
             self.path = path
         self.sample = "all" if sample is None else sample
         if self.sample not in ["all", "bsf", "salpeter", "minimal",
-                               "kinematics"]:
+                               "kinematics", "test"]:
             raise ValueError("EMILES sample not defined: {}".format(
                 self.sample))
         self.values = self.Values(self.sample)
@@ -75,8 +76,13 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.4])
                 self.NaFe = np.array([0., 0.6])
-
-
+            if sample == "test":
+                self.exponents = np.array([1.3])
+                self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
+                                     0.15,  0.26,  0.4])
+                self.age = np.linspace(1., 14., 14)
+                self.alphaFe = np.array([0])
+                self.NaFe = np.array([0.])
             return
 
     def get_filename(self, imf, metal, age, alpha, na):
@@ -146,7 +152,6 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     newflux, logLam, velscale = util.log_rebin(wrange, flux,
                                                velscale=velscale)
     ssps = np.zeros((dim, len(logLam)))
-    norms = np.zeros(dim)
     # Iterate over all models
     newfolder = os.path.join(context.home, "templates", \
                              "vel{}_w{}_{}".format(velscale, w1, w2))
@@ -162,30 +167,31 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
         flux = spec["flux"].data
         if fwhm > 2.51:
             flux = broad2res(wave, flux.T, np.ones_like(wave) * 2.51,
-                             res=fwhm)[0].T
+                             res=fwhm).T
         newflux, logLam, velscale = util.log_rebin(wrange, flux,
                                                velscale=velscale)
         hdu = fits.PrimaryHDU(newflux)
         hdu.writeto(outname, overwrite=True)
         return
     ############################################################################
-    for i, fname in enumerate(filenames):
-        print("Processing SSP {}".format(i+1))
+    print(" Processing SSP spectra...")
+    for i, fname in enumerate(tqdm(filenames)):
         process_spec(fname, velscale)
-    for i, args in enumerate(grid):
-        print("Processing SSP {}".format(i+1))
+    for i, args in enumerate(tqdm(grid)):
         filename = os.path.join(newfolder, emiles.get_filename(*args))
         data = fits.getdata(filename)
-        norm = np.median(data)
-        ssps[i] = data / norm
+        ssps[i] = data
         params[i] = args
-        norms[i] = norm
     hdu1 = fits.PrimaryHDU(ssps)
     hdu1.header["EXTNAME"] = "SSPS"
-    params = Table(params, names=["alpha", "[Z/H]", "age", "[alpha/Fe]",
-                                  "[Na/Fe]"])
-    norms = Table([norms], names=["norm"])
-    params = hstack((params, norms))
+    params = Table(params, names=["imf", "Z", "T", "alphaFe", "NaFe"])
+    remove_cols = []
+    for param in params.colnames:
+        n = len(np.unique(params[param]))
+        if n == 1:
+            remove_cols.append(param)
+    if len(remove_cols) > 0:
+        params.remove_columns(remove_cols)
     hdu3 = fits.BinTableHDU(params)
     hdu3.header["EXTNAME"] = "PARAMS"
     # Making wavelength array
@@ -195,12 +201,12 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     hdulist.writeto(output, overwrite=True)
     return
 
-def prepare_muse():
+def prepare_muse(sample="bsf"):
     w1 = 4500
     w2 = 10000
-    velscale = 30  # km / s
+    velscale = 50  # km / s
     starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="bsf",
+    prepare_templates_emiles_muse(w1, w2, velscale, sample=sample,
                                   redo=True)
     endtime = datetime.now()
     print("The program took {} to run".format(endtime - starttime))
