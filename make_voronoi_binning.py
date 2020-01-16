@@ -125,7 +125,7 @@ def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
     di = 0
     deltabin = 0
     sources = np.unique(segments)
-    for i,source in enumerate(sources[::-1]):
+    for i,source in enumerate(sources):
         print("Source {0}/{1:}".format(i+1, len(sources)))
         idx = segments == source
         s = signal[idx]
@@ -248,7 +248,7 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
 if __name__ == '__main__':
     fields = ["fieldA"]
     dataset = "MUSE-DEEP"
-    targetSN = 150
+    targetSN = 80
     for field in fields:
         imgname, cubename = context.get_field_files(field, dataset=dataset)
         wdir = os.path.split(imgname)[0]
