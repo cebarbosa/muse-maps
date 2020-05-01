@@ -19,6 +19,8 @@ from dustmaps import sfd
 
 if getpass.getuser() == "kadu":
     home = "/home/kadu/Dropbox/hydraimf"
+elif getpass.getuser() == "luisabuzzo":
+    home = "/home/luisabuzzo/Work/Master/NGC1487"
 else:
     home = "/sto/home/cebarbosa/hydraimf"
 
@@ -30,18 +32,19 @@ if not os.path.exists(config["data_dir"]): # Just to run once in my example
     # updated version of the popular Schlegel, Finkbeiner & Davis (1998) maps
 
 fields = ["fieldA", "fieldB", "fieldC", "fieldD"]
+obs = ["cube1","cube2"]
 
 # Constants
-D = 50.7 # Distance to the center of the Hydra I cluster in Mpc
-DL = 55.5# Luminosity distance
+D = 10.1 # Distance to the center of the Hydra I cluster in Mpc
+DL = 12.2# Luminosity distance
 velscale = 30. # Set velocity scale for pPXF related routines
-V = 3800 # km/s
-w1 = 4500
-w2 = 10000
+V = 848.0 # km/s
+#w1 = 4500
+#w2 = 10000
 
 # Properties of the system
-ra0 = 159.178471651 * u.degree
-dec0 = -27.5281283035 * u.degree
+ra0 = 58.942083 * u.degree
+dec0 = -42.368056 * u.degree
 
 # Get color excess
 coords = SkyCoord(ra0, dec0)
@@ -52,8 +55,8 @@ Av = ebv * Rv
 
 # VHELIO - radial velocities of the fields, have to be added from the
 # observed velocities.
-vhelio = {"fieldA" : 24.77, "fieldB" : 21.26, "fieldC" : 20.80,
-          "fieldD" : 19.09} # km / s
+#vhelio = {"fieldA" : 24.77, "fieldB" : 21.26, "fieldC" : 20.80,
+#          "fieldD" : 19.09} # km / s
 
 # Matplotlib settings
 plt.style.context("seaborn-paper")
@@ -67,38 +70,42 @@ plt.rcParams["ytick.minor.visible"] = True
 plt.rcParams["xtick.top"] = True
 plt.rcParams["ytick.right"] = True
 
-def get_field_files(field, dataset="MUSE"):
+def get_field_files(observations, dataset="MUSE"):
     """ Returns the names of the image and cube associated with a given
     field. """
-    if dataset == "MUSE-DEEP":
-        wdir = os.path.join(home, "data/MUSE-DEEP", field)
-        if field == "fieldA":
-            img = "ADP.2017-03-27T12:49:43.628.fits"
-            cube = "ADP.2017-03-27T12:49:43.627.fits"
-        elif field == "fieldB":
-            img = "ADP.2017-03-27T12:49:43.652.fits"
-            cube = "ADP.2017-03-27T12:49:43.651.fits"
-        elif field == "fieldC":
-            img = "ADP.2017-03-27T12:49:43.644.fits"
-            cube = "ADP.2017-03-27T12:49:43.643.fits"
-        elif field == "fieldD":
-            img = "ADP.2017-03-27T12:49:43.636.fits"
-            cube = "ADP.2017-03-27T12:49:43.635.fits"
+    # if dataset == "MUSE-DEEP":
+    #     wdir = os.path.join(home, "data/MUSE-DEEP", field)
+    #     if field == "fieldA":
+    #         img = "ADP.2017-03-27T12:49:43.628.fits"
+    #         cube = "ADP.2017-03-27T12:49:43.627.fits"
+    #     elif field == "fieldB":
+    #         img = "ADP.2017-03-27T12:49:43.652.fits"
+    #         cube = "ADP.2017-03-27T12:49:43.651.fits"
+    #     elif field == "fieldC":
+    #         img = "ADP.2017-03-27T12:49:43.644.fits"
+    #         cube = "ADP.2017-03-27T12:49:43.643.fits"
+    #     elif field == "fieldD":
+    #         img = "ADP.2017-03-27T12:49:43.636.fits"
+    #         cube = "ADP.2017-03-27T12:49:43.635.fits"
+    #     return os.path.join(wdir, img), os.path.join(wdir, cube)
+    if dataset=="MUSE":
+        wdir = os.path.join(home, "data/MUSE")
+        if observations == "cube1":
+            img = "ADP.2017-11-20T16_23_13.682.fits"
+            cube = "ADP.2017-11-20T16_23_13.681.fits"
+        elif observations == "cube2":
+            img = "ADP.2017-11-20T16_23_13.729.fits"
+            cube = "ADP.2017-11-20T16_23_13.728.fits"
         return os.path.join(wdir, img), os.path.join(wdir, cube)
-    elif dataset=="MUSE":
-        wdir = os.path.join(home, "data/MUSE", "combined", field)
-        img = os.path.join(wdir, "NGC3311_{}_IMAGE_COMBINED.fits".format(field))
-        cube = os.path.join(wdir, "NGC3311_{}_DATACUBE_COMBINED.fits".format(
-            field))
         return img, cube
     else:
         raise ValueError("Data set name not defined: {}".format(dataset))
 
 def get_data_dir(dataset):
-    if dataset == "MUSE-DEEP":
-        return os.path.join(home, "data/MUSE-DEEP")
-    elif dataset == "MUSE":
-        return os.path.join(home, "data/MUSE/combined" )
+    # if dataset == "MUSE-DEEP":
+    #     return os.path.join(home, "data/MUSE-DEEP")
+    if dataset == "MUSE":
+        return os.path.join(home, "data/MUSE" )
 
 # Emission lines used in the projects
 def get_emission_lines():
