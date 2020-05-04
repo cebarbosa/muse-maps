@@ -69,7 +69,7 @@ def collapse_cube(cubename, outfile, redo=False, wmin=5590, wmax=5680):
     hdulist.writeto(outfile, overwrite=True)
     return
 
-def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
+def calc_binning(signal, noise, mask, targetSN, output, redo=False):
     """ Calculates Voronoi bins using only pixels in a mask.
 
     Input Parameters
@@ -86,14 +86,12 @@ def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
 
     redo : bool
         Redo the work in case the output file already exists.
+    output: str
+        Name of the output ascii table.
 
     Output Parameters
     -----------------
-    str
-        Name of the output ascii table.
     """
-    if output is None:
-        output = "voronoi_table_sn{}.txt".format(targetSN)
     if os.path.exists(output) and not redo:
         return output
     # Preparing position arrays
@@ -149,9 +147,9 @@ def calc_binning(signal, noise, mask, targetSN, output=None, redo=False):
     table = Table([newx, newy, bins], names=["X_IMAGE", "Y_IMAGE",
                                              "BIN_NUMBER"])
     table.write(output, format="ascii", overwrite=True)
-    return output
+    return
 
-def make_voronoi_image(bintable, img, targetSN, redo=False, output=None):
+def make_voronoi_image(bintable, img, targetSN, output, redo=False):
     """ Produces an check image for the Voronoi Tesselation.
 
     Input Parameters
@@ -167,18 +165,15 @@ def make_voronoi_image(bintable, img, targetSN, redo=False, output=None):
         Indicates the S/N ratio of the input tesselation to determine the
         output file name.
 
+    output: str
+        Name of the output image containing the Voronoi tesselation in 2D.
+
     redo : bool
         Redo the work in case the output file already exists.
-
-    Output Parameters:
-        str
-        Name of the output image containing the Voronoi tesselation in 2D.
     """
-    if output is None:
-        output = "voronoi2d_sn{}.fits".format(targetSN)
     if os.path.exists(output) and not redo:
         return output
-    tabledata = ascii.read(bintable)
+    tabledata = Table.read(bintable, format="ascii")
     imgdata = fits.getdata(img)
     binimg = np.zeros_like(imgdata) * np.nan
     # Making binning scheme
@@ -222,7 +217,8 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
         Redo combination in case the output spec already exists.
 
     """
-    outdir = os.path.join(os.getcwd(), "spec1d_sn{}".format(targetSN))
+    outdir = os.path.join(os.getcwd(), "sn{}".format(targetSN),
+                          "combined".format(targetSN))
     if not os.path.exists(outdir):
         os.mkdir(outdir)
     data = fits.getdata(cubename, 1)
@@ -246,19 +242,25 @@ def combine_spectra(cubename, voronoi2D, targetSN, field, redo=False):
     return
 
 if __name__ == '__main__':
-    fields = ["fieldA"]
-    dataset = "MUSE-DEEP"
-    targetSN = 80
-    for field in fields:
-        imgname, cubename = context.get_field_files(field, dataset=dataset)
+    targetSN = 100
+    for obs in context.obs:
+        imgname, cubename = context.get_field_files(obs)
         wdir = os.path.split(imgname)[0]
         os.chdir(wdir)
-        snimg = os.path.join(wdir, "signal_noise.fits")
+        outdir = os.path.join(wdir, "sn{}".format(targetSN))
+        if not os.path.exists(outdir):
+            os.mkdir(outdir)
+        snimg = os.path.join(wdir, "signal_noise_{}.fits".format(obs))
         collapse_cube(cubename, snimg, redo=False)
         signal = fits.getdata(snimg, 1)
         noise = fits.getdata(snimg, 2)
-        mask = fits.getdata("simple_binning.fits")
-        bintable = calc_binning(signal, noise, mask, targetSN, redo=True)
-        voronoi2D = make_voronoi_image(bintable, imgname, targetSN, redo=True)
-        voronoi2D = sort_voronoi2D(voronoi2D, imgname)
-        combine_spectra(cubename, voronoi2D, targetSN, field, redo=True)
+        mask = fits.getdata("mask_{}.fits".format(obs))
+        outtable = os.path.join(outdir, "voronoi_table_{}.txt".format(obs,
+                                                                   targetSN))
+        bintable = calc_binning(signal, noise, mask, targetSN,
+                                outtable, redo=False)
+        vor2D = os.path.join(outdir, "voronoi2d_{}.fits".format(obs,
+                                                                  targetSN))
+        voronoi2D = make_voronoi_image(bintable, imgname, targetSN,
+                                       vor2D, redo=False)
+        combine_spectra(cubename, voronoi2D, targetSN, obs, redo=False)

@@ -17,17 +17,19 @@ import numpy as np
 from astropy.io import fits
 from astropy.convolution import Gaussian2DKernel, convolve
 from astropy.table import Table
-import matplotlib.pyplot as plt
 
 import sewpy
 
 import context
-from misc import array_from_header
 
 def make_unsharp_mask(img, cube, redo=False, output=None):
     """ Produces unsharp mask of a given image. """
     if output is None:
         output = "unsharp_mask_{}.fits".format(cube)
+    print(os.getcwd())
+    print(os.listdir("."))
+    print(output)
+    input(os.path.exists(output))
     if os.path.exists(output) and not redo:
         return output
     kernel = Gaussian2DKernel(5)
@@ -66,18 +68,18 @@ def run_sextractor(img, cube, redo=False, outfile=None, segmentation_file=None,
     params = ["NUMBER", "X_IMAGE", "Y_IMAGE", "KRON_RADIUS", "ELLIPTICITY",
                "THETA_IMAGE", "A_IMAGE", "B_IMAGE", "MAG_AUTO"]
     config = {"CHECKIMAGE_TYPE": "SEGMENTATION",
-                            "CHECKIMAGE_NAME": segmentation_file,
-                            "DETECT_THRESH" : 1.5}
+              "CHECKIMAGE_NAME": segmentation_file,
+              "DETECT_THRESH" : 1.5, "DEBLEND_NTHRESH": 64}
     sew = sewpy.SEW(config=config, sexpath="sextractor", params=params)
     cat = sew(img)
     cat["table"].write(outfile, format="fits", overwrite=True)
     return outfile
 
-def mask_sources(img, cat, cube, redo=False, output=None):
+def mask_background(img, cat, cube, redo=False, output=None):
     """ Produces segmentation image with bins for detected sources using
     elliptical regions. """
     if output is None:
-        output = "halo_only_{}.fits".format(cube)
+        output = "mask_{}.fits".format(cube)
     if os.path.exists(output) and not redo:
         return output
     data = fits.getdata(img)
@@ -97,7 +99,7 @@ def mask_sources(img, cat, cube, redo=False, output=None):
         Rmax = source["A_IMAGE"] * source["KRON_RADIUS"]
         segmentation += np.where(R <= Rmax, source["NUMBER"], 0.)
     d = np.copy(data)
-    d[segmentation!=0] = np.nan
+    d[segmentation==0] = np.nan
     hdu = fits.PrimaryHDU(d)
     hdu.writeto(output, overwrite=True)
     return output
@@ -121,58 +123,17 @@ def ignore_sources(cubes):
     else:
         return []
 
-def simple_binning(img, cube):
-    """ Includes additional bins to halo before Voronoi. """
-    outfile = "simple_binning_{}.fits".format(cube)
-    data = fits.getdata(img)
-    binning = np.zeros_like(data)
-    # Adding sources if necessary
-    newregions = "newsources_{}.reg".format(cube)
-    if os.path.exists(newregions):
-        r = pyregion.open(newregions)
-        for i, region in enumerate(r.get_filter()):
-            mask = region.mask(data.shape)
-            binning[mask] = i + 1
-    # Include radial bins in fields C and D
-    # if field in ["fieldC", "fieldD"]:
-    #     refcube = context.get_field_files(field)[1]
-    #     ra = array_from_header(refcube, axis=1)
-    #     dec = array_from_header(refcube, axis=2)
-    #     # Ofset to the center of NGC 3311
-    #     ra -= context.ra0
-    #     dec -= context.dec0
-    #     # Convert to radians
-    #     X = context.D * 1000 * np.deg2rad(ra)
-    #     Y = context.D * 1000 * np.deg2rad(dec)
-    #     xx, yy = np.meshgrid(X,Y)
-    #     R = np.sqrt(xx**2 + yy**2)
-    #     Rbins = 10 + 35 * np.logspace(0.3,1,4, base=10) / 10
-    #     Rbins = np.hstack((10, Rbins))
-    #     for i,rbin in enumerate(Rbins[:-1]):
-    #         deltar = Rbins[i+1] - Rbins[i]
-    #         newbin = binning.max() + 1
-    #         idxbin = np.where((R > rbin) & (R <= rbin + deltar) & (binning==0))
-    #         if i == 3:
-    #             newbin = 0
-    #         binning[idxbin] = newbin
-    binning[np.isnan(data)] = np.nan
-    hdu = fits.PrimaryHDU(binning)
-    hdu.writeto(outfile, overwrite=True)
-    return
-
 if __name__ == "__main__":
-    dataset = "MUSE"
     cubes = context.obs
-    data_dir = os.path.join(context.data_dir, dataset)
+    data_dir = os.path.join(context.data_dir, "MUSE")
     os.chdir(data_dir)
     for cube in cubes:
         os.chdir(os.path.join(data_dir))
-        cubename = context.get_field_files(cube)[1]
-        print(cubename)
-        imgname = context.get_field_files(cube)[0]
-        print(imgname)
-        imgum = make_unsharp_mask(imgname, cube, redo=False)
-        immasked = mask_regions(imgum, cube, redo=False)
-        sexcat = run_sextractor(immasked, cube, redo=False)
-        imhalo = mask_sources(immasked, sexcat, cube, redo=True)
-        simple_binning(imhalo, cube)
+        imgname, cubename = context.get_field_files(cube)
+        segmentation_file = "segmentation_{}.fits".format(cube)
+        sexcat = run_sextractor(imgname, cube,
+                                segmentation_file=segmentation_file, redo=False)
+        segmentation = fits.getdata(segmentation_file).astype(np.float)
+        segmentation[segmentation==0] = np.nan
+        hdu = fits.PrimaryHDU(segmentation)
+        hdu.writeto("mask_{}.fits".format(cube), overwrite=True)
