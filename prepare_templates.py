@@ -22,17 +22,14 @@ import ppxf.ppxf_util as util
 from tqdm import tqdm
 
 import context
-from muse_resolution import broad2res
+from homogeneize_resolution import broad2res
 from misc import array_from_header
 
 class EMiles_models():
     """ Class to handle data from the EMILES SSP models. """
     def __init__(self, sample=None, path=None, w1=4500, w2=10000):
-        if path is None:
-            self.path = os.path.join(context.home,
-                        "models/EMILES_BASTI_w{}_{}".format(w1, w2))
-        else:
-            self.path = path
+        self.path = os.path.join(context.data_dir,
+                        "EMILES_BASTI_w{}_{}".format(w1, w2))
         self.sample = "all" if sample is None else sample
         if self.sample not in ["all", "bsf", "salpeter", "minimal",
                                "kinematics", "test"]:
@@ -62,20 +59,13 @@ class EMiles_models():
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.2, 0.4])
                 self.NaFe = np.array([0., 0.3, 0.6])
-            if sample == "bsf":
-                self.exponents = np.array([0.3, 0.8, 1.3, 1.8, 2.3, 2.8, 3.3])
-                self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
-                                     0.15,  0.26,  0.4])
-                self.age = np.linspace(1., 14., 14)
-                self.alphaFe = np.array([0., 0.2, 0.4])
-                self.NaFe = np.array([0., 0.3, 0.6])
             if sample == "kinematics":
                 self.exponents = np.array([1.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
                                      0.15,  0.26,  0.4])
                 self.age = np.linspace(1., 14., 14)
                 self.alphaFe = np.array([0., 0.4])
-                self.NaFe = np.array([0., 0.6])
+                self.NaFe = np.array([0.])
             if sample == "test":
                 self.exponents = np.array([1.3])
                 self.ZH = np.array([-0.96, -0.66, -0.35, -0.25, 0.06,
@@ -95,44 +85,15 @@ class EMiles_models():
                "8:1.1f}.fits".format(imf, msign, abs(metal), azero, age, esign,
                                      abs(alpha), nasign, na)
 
-def trim_templates(emiles, w1=4500, w2=10000, redo=False):
-    """ Slice spectra from templates according to wavelength range. """
-    newpath = os.path.join(context.home, "models/EMILES_BASTI_w{}_{}".format(
-                           w1, w2))
-    if not os.path.exists(newpath):
-        os.mkdir(newpath)
-    for args in product(emiles.values.exponents, emiles.values.ZH,
-                        emiles.values.age, emiles.values.alphaFe,
-                        emiles.values.NaFe):
-        filename = os.path.join(emiles.path, emiles.get_filename(*args))
-        newfilename = os.path.join(newpath, emiles.get_filename(*args))
-        if os.path.exists(newfilename):
-            continue
-        flux = fits.getdata(filename)
-        wave = array_from_header(filename, axis=1, extension=0)
-        idx = np.where(np.logical_and(wave > w1, wave
-                                      < w2))
-        tab = Table([wave[idx] * u.AA, flux[idx] * u.adu],
-                    names=["wave", "flux"])
-        tab.write(newfilename, format="fits")
-        print("Created file ", newfilename)
-    return
-
-def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
-                                  fwhm=None, instrument=None):
+def prepare_templates_emiles_muse(velscale=50, sample="all", redo=False,
+                                  fwhm=None):
     """ Pipeline for the preparation of the templates."""
-    instrument = "muse" if instrument is None else instrument
-    output = os.path.join(context.home, "templates",
-            "emiles_{}_vel{}_w{}_{}_{}_fwhm{}.fits".format(instrument, velscale,
-                                                        w1, w2, sample, fwhm))
+    output = os.path.join(context.data_dir, "templates",
+            "emiles_vel{}_{}_fwhm{}.fits".format(velscale, sample, fwhm))
     if os.path.exists(output) and not redo:
         return
     fwhm = 2.95 if fwhm is None else fwhm
-    emiles_base = EMiles_models(path=os.path.join(context.home, "models",
-                              "EMILES_BASTI_INTERPOLATED"), sample=sample)
-    trim_templates(emiles_base, w1=w1, w2=w2, redo=False)
-    emiles = EMiles_models(path=os.path.join(context.home, "models",
-                           "EMILES_BASTI_w{}_{}".format(w1, w2)), sample=sample)
+    emiles = EMiles_models(sample=sample)
     # First part: getting SSP templates
     grid = np.array(np.meshgrid(emiles.values.exponents, emiles.values.ZH,
                              emiles.values.age, emiles.values.alphaFe,
@@ -153,9 +114,8 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
                                                velscale=velscale)
     ssps = np.zeros((dim, len(logLam)))
     # Iterate over all models
-    newfolder = os.path.join(context.home, "templates", \
-                             "vel{}_w{}_{}_fwhm{}".format(velscale, w1, w2,
-                                                          fwhm))
+    newfolder = os.path.join(context.data_dir, "templates", \
+                             "vel{}_fwhm{}".format(velscale, fwhm))
     if not os.path.exists(newfolder):
         os.mkdir(newfolder)
     ############################################################################
@@ -202,29 +162,6 @@ def prepare_templates_emiles_muse(w1, w2, velscale, sample="all", redo=False,
     hdulist.writeto(output, overwrite=True)
     return
 
-def prepare_muse(sample="test"):
-    w1 = 4500
-    w2 = 10000
-    velscale = 50  # km / s
-    starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample=sample, fwhm=2.5,
-                                  redo=True)
-    endtime = datetime.now()
-    print("The program took {} to run".format(endtime - starttime))
-
-def prepare_wifis():
-    w1 = 11600
-    w2 = 12400
-    velscale = 20 # km / s
-    starttime = datetime.now()
-    prepare_templates_emiles_muse(w1, w2, velscale, sample="kinematics",
-                                  redo=True, fwhm=2.5, instrument="wifis")
-    endtime = datetime.now()
-    print("The program took {} to run".format(endtime - starttime))
-
-
 if __name__ == "__main__":
-    prepare_muse()
-    # prepare_wifis()
-
-
+    prepare_templates_emiles_muse(velscale=50, sample="kinematics", fwhm=2.95,
+                                  redo=False)

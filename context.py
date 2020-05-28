@@ -34,7 +34,7 @@ obs = ["cube1","cube2"]
 # Constants
 D = 10.1 # Distance to the center of the Hydra I cluster in Mpc
 DL = 12.2# Luminosity distance
-velscale = 30. # Set velocity scale for pPXF related routines
+velscale = 50. # Set velocity scale for pPXF related routines
 V = 848.0 # km/s
 #w1 = 4500
 #w2 = 10000
